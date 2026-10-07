@@ -1,0 +1,42 @@
+# Publicare pe Render (render.com → New → Blueprint → alegi acest repo).
+# Datele (întrebări, teme, idei) și fișierele stau în Supabase, deci planul gratuit
+# ajunge: serverul poate fi repornit oricând fără să se piardă nimic.
+# Cheile NU se scriu aici: le completezi în Render, la „Environment”
+# (sync: false = Render ți le cere la prima publicare).
+services:
+  - type: web
+    name: cutia-clasei
+    runtime: python
+    plan: free               # datele stau în Supabase, nu pe discul serverului
+    region: frankfurt        # cel mai aproape de România
+    buildCommand: pip install -r requirements.txt
+    # Un singur proces: datele stau în memorie și se salvează în Supabase.
+    # --proxy-headers: în spatele Render, linkurile din emailuri ies cu https://
+    startCommand: uvicorn src.app:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips "*"
+    healthCheckPath: /api/health
+    autoDeploy: true         # fiecare push pe GitHub publică automat versiunea nouă
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.15
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: TRAINER_EMAILS
+        sync: false
+      - key: TRAINER_CODE
+        sync: false
+      - key: CLASS_CODE
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY   # doar pe server: pentru datele și fișierele aplicației
+        sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false

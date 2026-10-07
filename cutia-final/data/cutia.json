@@ -1,0 +1,554 @@
+{
+  "users": {
+    "trainer@demo.cutia": {
+      "email": "trainer@demo.cutia",
+      "name": "Trainer Demo",
+      "role": "trainer",
+      "salt": "0f05b6645d6b8f4f4173e3cc11ae1e13",
+      "created_at": "2026-10-07T15:33:09+00:00",
+      "hash": "eed01f0d6f4d183a3bf9e28b0b3b16f1e8a95415f0970c9744e66799ae5ecb1c"
+    },
+    "ana@demo.cutia": {
+      "email": "ana@demo.cutia",
+      "name": "Ana Demo",
+      "role": "student",
+      "salt": "78d43bf5b8473afe0a77dec099f17638",
+      "created_at": "2026-10-07T15:33:09+00:00",
+      "hash": "11c6d1e6850f0641467cdf590fc91373fc8086fe4b1971faf73e08c6866340bd"
+    },
+    "mihai@demo.cutia": {
+      "email": "mihai@demo.cutia",
+      "name": "Mihai Demo",
+      "role": "student",
+      "salt": "7cd11b08dedc9798bb21ae68de52dee9",
+      "created_at": "2026-10-07T15:33:09+00:00",
+      "hash": "e714fcfa4c15155195e792d509a77e594d5cfa05ab93157f06746346c212ad4a"
+    }
+  },
+  "sessions": {
+    "e628317d5895d0ac6a053a313371a0f574d5e2d76dbf58f542587d37478bc784": {
+      "name": "Trainer Demo",
+      "role": "trainer",
+      "key": "trainer@demo.cutia",
+      "expires": "2026-12-06T16:30:42+00:00"
+    }
+  },
+  "prefs": {},
+  "drafts": [],
+  "questions": [
+    {
+      "id": 1,
+      "text": "De ce nu se salvează formularul meu după refresh?",
+      "category": "debugging",
+      "anonymous": false,
+      "faq_ok": true,
+      "author": "Ana Demo",
+      "author_key": "ana@demo.cutia",
+      "created_at": "2026-10-07T15:33:09+00:00",
+      "answer": "Datele stau doar în memoria paginii. Salvează-le în localStorage sau, dacă trebuie să le vadă și alții, într-o bază de date.",
+      "answered_at": "2026-10-07T15:33:09+00:00",
+      "ai_answer": null,
+      "ai_answered_at": null
+    },
+    {
+      "id": 2,
+      "text": "Cum îi dau lui Claude contextul întregului proiect?",
+      "category": "context",
+      "anonymous": false,
+      "faq_ok": false,
+      "author": "Ana Demo",
+      "author_key": "ana@demo.cutia",
+      "created_at": "2026-10-07T15:33:09+00:00",
+      "answer": null,
+      "answered_at": null,
+      "ai_answer": null,
+      "ai_answered_at": null
+    },
+    {
+      "id": 3,
+      "text": "Unde țin cheia API ca să nu ajungă pe GitHub?",
+      "category": "security",
+      "anonymous": false,
+      "faq_ok": true,
+      "author": "Mihai Demo",
+      "author_key": "mihai@demo.cutia",
+      "created_at": "2026-10-07T15:33:09+00:00",
+      "answer": "Într-o variabilă de mediu, în fișierul .env, care e trecut în .gitignore. Apelul către AI se face de pe server.",
+      "answered_at": "2026-10-07T15:33:09+00:00",
+      "ai_answer": null,
+      "ai_answered_at": null
+    }
+  ],
+  "proposals": [
+    {
+      "id": 4,
+      "title": "Bingo de prompturi",
+      "description": "Un joc în care clasa bifează tehnici de prompting pe măsură ce le folosește la oră.",
+      "audience": "Studenții, în timpul orei",
+      "author": "Ana Demo",
+      "author_key": "ana@demo.cutia",
+      "created_at": "2026-10-07T15:33:09+00:00",
+      "chosen": false,
+      "chosen_at": null,
+      "decision": "discussing",
+      "trainer_note": "Îmi place. Facem prima versiune data viitoare?",
+      "voters": [
+        "mihai@demo.cutia"
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Jurnal de erori",
+      "description": "Fiecare student salvează erorile întâlnite și cum le-a rezolvat, ca să le găsească ușor.",
+      "audience": "Studenții și trainerul",
+      "author": "Mihai Demo",
+      "author_key": "mihai@demo.cutia",
+      "created_at": "2026-10-07T15:33:09+00:00",
+      "chosen": true,
+      "chosen_at": "2026-10-07T15:33:09+00:00",
+      "decision": "chosen",
+      "trainer_note": null,
+      "voters": [
+        "ana@demo.cutia"
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Cronometru de pauze",
+      "description": "Un cronometru care amintește clasei să ia pauză.",
+      "audience": "Toată clasa",
+      "author": "Ana Demo",
+      "author_key": "ana@demo.cutia",
+      "created_at": "2026-10-07T15:33:09+00:00",
+      "chosen": false,
+      "chosen_at": null,
+      "decision": "new",
+      "trainer_note": null,
+      "voters": []
+    }
+  ],
+  "submissions": [],
+  "messages": [],
+  "assignments": [],
+  "announcements": [],
+  "bonuses": [],
+  "supabase_pending": {},
+  "digests": [
+    {
+      "date": "2026-10-07",
+      "created_at": "2026-10-07T15:33:13+00:00",
+      "window_hours": 24,
+      "stats": {
+        "sources": 14,
+        "scanned": 80,
+        "fresh": 14,
+        "picked": 6
+      },
+      "pool": [
+        {
+          "id": "n0",
+          "title": "Google bets Gemini can turn casual players into game developers with new Playground feature",
+          "summary": "Google launched Playground, a browser-based platform that lets users create their own games using nothing but text prompts and no coding skills. The platform runs on Gemini, Nano Banana, and Lyria. Alongside Playground, Google and Unity announced Unity Spark, a more professional AI tool with a beta planned for 2026. The article Google bets Gemini can turn casual players into game developers with n",
+          "source": "The Decoder",
+          "link": "https://the-decoder.com/google-bets-gemini-can-turn-casual-players-into-game-developers-with-new-playground-feature/",
+          "published": "2026-10-07T14:44:42+00:00",
+          "category": "launch",
+          "score": 20.96630404761574
+        },
+        {
+          "id": "n3",
+          "title": "Strands Decider 2B: a small, open-source, decision model",
+          "summary": "Article URL: https://strandsagents.com/blog/introducing-strands-decider/ Comments URL: https://news.ycombinator.com/item?id=49987076 Points: 240 # Comments: 67",
+          "source": "Hacker News",
+          "link": "https://strandsagents.com/blog/introducing-strands-decider/",
+          "published": "2026-10-07T02:02:11+00:00",
+          "category": "launch",
+          "score": 18.436778560949072
+        },
+        {
+          "id": "n4",
+          "title": "llm-openai-decisions 0.1a0",
+          "summary": "Release: llm-openai-decisions 0.1a0 OpenAI released their new Jev-style Decisions API , as previously announced at last week's DevDay. Since I already have an llm-typesafe plugin for talking to Jev, I had GPT-6 Astra read the new OpenAI API documentation and build an llm-openai-decisions plugin inspired by llm-typesafe . Unlike Jev, the new gpt-6-luna decision model supports image input in additio",
+          "source": "Simon Willison",
+          "link": "https://simonwillison.net/2026/Oct/6/llm-openai-decisions/",
+          "published": "2026-10-06T23:04:13+00:00",
+          "category": "launch",
+          "score": 18.31319063923611
+        },
+        {
+          "id": "n8",
+          "title": "Google claims EmbeddingGemma 2 outperforms rival embedding models twice its size",
+          "summary": "Google released EmbeddingGemma 2, an open model with 740 million parameters that converts text, images, video, audio, and code into vectors. It runs on-device, needs only about 191 MB of RAM, and outperforms some competing models twice its size, according to Google. Paired with a small open model like Gemma 4, it can run offline RAG apps without sending data to external servers. The article Google",
+          "source": "The Decoder",
+          "link": "https://the-decoder.com/google-claims-embeddinggemma-2-outperforms-rival-embedding-models-twice-its-size/",
+          "published": "2026-10-06T19:47:27+00:00",
+          "category": "launch",
+          "score": 16.17654709153935
+        },
+        {
+          "id": "n9",
+          "title": "Mistral Large 4",
+          "summary": "My comment on Mistral Large 4 — Hacker News. wren6991 : The benchmark is saturated. Frontier models are tested with an armadillo in fishnet tights jaywalking on Mars. OK well I couldn't resist this one: llm -m claude-opus-5.5 'Generate an SVG of an armadillo in fishnet tights jaywalking on Mars' llm -m gpt-6.1-sol 'Generate an SVG of an armadillo in fishnet tights jaywalking on Mars' llm -m gemini",
+          "source": "Simon Willison",
+          "link": "https://simonwillison.net/2026/Oct/6/hn-49982139/",
+          "published": "2026-10-06T18:20:58+00:00",
+          "category": "models",
+          "score": 16.11648925034722
+        },
+        {
+          "id": "n18",
+          "title": "Introducing Mistral Large 4: Le chonk",
+          "summary": "Introducing Mistral Large 4: Le chonk Mistral are back in the game. Today they're releasing a preview of Mistral Large 4, a 1 trillion parameter, 49 billion active parameter model trained on their own cluster of 3,800 NVIDIA Grace Blackwell GPUs. The preview is available via their API. They promise to release the open weights model at the \"end of this month\". The model only supports two reasoning ",
+          "source": "Simon Willison",
+          "link": "https://simonwillison.net/2026/Oct/6/le-chonk/",
+          "published": "2026-10-06T20:18:19+00:00",
+          "category": "launch",
+          "score": 14.197982305902778
+        },
+        {
+          "id": "n19",
+          "title": "Google's new image model Nano Banana 2.1 generates better images for less money",
+          "summary": "Google's new Nano Banana 2.1 image model uses Gemini 3.6 Flash and beats the previous Pro model in some benchmarks at a lower cost. But its predecessor also scored well in tests, while Pro often produced better images in practice. The article Google's new image model Nano Banana 2.1 generates better images for less money appeared first on The Decoder .",
+          "source": "The Decoder",
+          "link": "https://the-decoder.com/googles-new-image-model-nano-banana-2-1-generates-better-images-for-less-money/",
+          "published": "2026-10-06T19:29:42+00:00",
+          "category": "tools",
+          "score": 14.164220702650463
+        },
+        {
+          "id": "n29",
+          "title": "llm-mistral 0.16",
+          "summary": "Release: llm-mistral 0.16 Adds support for reasoning models, such as the newly released Mistral Large 4 . Tags: llm , mistral , llm-reasoning",
+          "source": "Simon Willison",
+          "link": "https://simonwillison.net/2026/Oct/6/llm-mistral/",
+          "published": "2026-10-06T21:32:34+00:00",
+          "category": "launch",
+          "score": 13.249544805902778
+        },
+        {
+          "id": "n30",
+          "title": "Insurers brace for millions in claims as AI agents spin out of control",
+          "summary": "Insurers are bracing for millions in claims from rogue AI agents, and executives like OpenAI's Sam Altman and Anthropic's Dario Amodei could be personally on the hook for the fallout. The article Insurers brace for millions in claims as AI agents spin out of control appeared first on The Decoder .",
+          "source": "The Decoder",
+          "link": "https://the-decoder.com/insurers-brace-for-millions-in-claims-as-ai-agents-spin-out-of-control/",
+          "published": "2026-10-06T16:06:46+00:00",
+          "category": "tools",
+          "score": 13.023294776724537
+        },
+        {
+          "id": "n39",
+          "title": "How AI decision models could change content moderation",
+          "summary": "On Tuesday, Musubi announced a lightweight decision model made for real-time moderation called PolicyLM-1.7B, released with open weights.",
+          "source": "TechCrunch",
+          "link": "https://techcrunch.com/2026/10/06/how-ai-decision-models-could-change-content-moderation/",
+          "published": "2026-10-06T20:35:20+00:00",
+          "category": "launch",
+          "score": 12.209799870023147
+        },
+        {
+          "id": "n40",
+          "title": "Tell HN: GitHub refuses to remove cracked copies of my software after a month",
+          "summary": "I am a developer of https://www.photopea.com, a popular photo editor that runs in a web browser. Many people are asking AI models to take the Javascript code from my website, remove all ads from it, and they publish such a \"new product\" on Github for everyone to download. There exist tens of such repositories on Github. I want my website to be the only source of a stable version of my program Phot",
+          "source": "Hacker News",
+          "link": "https://news.ycombinator.com/item?id=49982498",
+          "published": "2026-10-06T18:54:01+00:00",
+          "category": "tools",
+          "score": 12.13944059798611
+        },
+        {
+          "id": "n62",
+          "title": "OpenAI drops another batch of mathematical breakthroughs",
+          "summary": "OpenAI has revealed solutions to a number of long-standing mathematics problems produced by an unreleased frontier model in a batch of 722 manuscripts, covering 372 result families that group related papers. It extends a run of breakthroughs that have both impressed and unsettled parts of the mathematical community while raising questions about research ethics and […]",
+          "source": "The Verge",
+          "link": "https://www.theverge.com/ai-artificial-intelligence/1005004/openai-math-release-github",
+          "published": "2026-10-06T23:26:38+00:00",
+          "category": "launch",
+          "score": 11.328758203356482
+        },
+        {
+          "id": "n64",
+          "title": "Using Parseable with Datasette for OpenTelemetry traces",
+          "summary": "TIL: Using Parseable with Datasette for OpenTelemetry traces I saw Parseable in a Show HN today - it's a new observability platform with both an open source (AGPL) Rust implementation (a single ~180MB binary), an \"Enterprise\" version with extra features and a cloud hosted option. Since Datasette 1.0a41 added OpenTelemetry support (thanks, Alex Garcia), I decided to fire up Codex and have it figure",
+          "source": "Simon Willison",
+          "link": "https://simonwillison.net/2026/Oct/6/datasette-parseable-opentelemetry/",
+          "published": "2026-10-06T19:07:31+00:00",
+          "category": "research",
+          "score": 11.148815639236112
+        },
+        {
+          "id": "n65",
+          "title": "Wikimedia confirms OpenAI's rogue AI agents edited wikis, tried to compromise tools, and hammered its infrastructure",
+          "summary": "According to the Wikimedia Foundation, rogue OpenAI agents edited wikis without permission, tried to abuse a citation tool as a proxy, and may have caused a partial Wikidata Query Service outage through massive crawling. Wikimedia says AI companies need to take responsibility for their agents instead of pushing the burden onto volunteer editors. The article Wikimedia confirms OpenAI's rogue AI age",
+          "source": "The Decoder",
+          "link": "https://the-decoder.com/wikimedia-confirms-openais-rogue-ai-agents-edited-wikis-tried-to-compromise-tools-and-hammered-its-infrastructure/",
+          "published": "2026-10-06T18:29:35+00:00",
+          "category": "tools",
+          "score": 11.122473017465278
+        }
+      ],
+      "by_lang": {
+        "ro": {
+          "ai": true,
+          "line": "Bună dimineața, constructori! Azi Google vă invită să faceți jocuri doar din cuvinte. Hai să vedem!",
+          "title": "Jocuri din prompturi, modele mici și Mistral revine",
+          "tldr": "Google a lansat Playground, o platformă în browser unde poți crea jocuri doar din prompturi text, fără cod. Mistral a lansat în preview Mistral Large 4 prin API, iar Google a publicat EmbeddingGemma 2, un model mic care rulează pe dispozitiv pentru aplicații RAG offline. Tot azi apar și „modelele de decizie” mici și deschise.",
+          "stories": [
+            {
+              "id": "n0",
+              "title": "Google bets Gemini can turn casual players into game developers with new Playground feature",
+              "summary": "Google launched Playground, a browser-based platform that lets users create their own games using nothing but text prompts and no coding skills. The platform runs on Gemini, Nano Banana, and Lyria. Alongside Playground, Google and Unity announced Unity Spark, a more professional AI tool with a beta planned for 2026. The article Google bets Gemini can turn casual players into game developers with n",
+              "source": "The Decoder",
+              "link": "https://the-decoder.com/google-bets-gemini-can-turn-casual-players-into-game-developers-with-new-playground-feature/",
+              "published": "2026-10-07T14:44:42+00:00",
+              "category": "launch",
+              "score": 20.96630404761574,
+              "headline": "Google Playground: creezi jocuri în browser doar cu prompturi text",
+              "why": "Arată cât de departe a ajuns ideea de vibe coding: jocuri fără nicio linie de cod, pe Gemini, Nano Banana și Lyria.",
+              "for_you": "Descrie un mini-joc simplu (ex. prinzi stele care cad) și compară rezultatul cu ce construiești cu Claude."
+            },
+            {
+              "id": "n8",
+              "title": "Google claims EmbeddingGemma 2 outperforms rival embedding models twice its size",
+              "summary": "Google released EmbeddingGemma 2, an open model with 740 million parameters that converts text, images, video, audio, and code into vectors. It runs on-device, needs only about 191 MB of RAM, and outperforms some competing models twice its size, according to Google. Paired with a small open model like Gemma 4, it can run offline RAG apps without sending data to external servers. The article Google",
+              "source": "The Decoder",
+              "link": "https://the-decoder.com/google-claims-embeddinggemma-2-outperforms-rival-embedding-models-twice-its-size/",
+              "published": "2026-10-06T19:47:27+00:00",
+              "category": "launch",
+              "score": 16.17654709153935,
+              "headline": "EmbeddingGemma 2: model mic, deschis, care rulează pe dispozitiv",
+              "why": "Transformă text, imagini, audio și cod în vectori cu doar ~191 MB RAM, permițând aplicații RAG offline.",
+              "for_you": "Cere-i lui Claude să-ți explice cum ai face o căutare inteligentă în notițele tale folosind embeddings."
+            },
+            {
+              "id": "n18",
+              "title": "Introducing Mistral Large 4: Le chonk",
+              "summary": "Introducing Mistral Large 4: Le chonk Mistral are back in the game. Today they're releasing a preview of Mistral Large 4, a 1 trillion parameter, 49 billion active parameter model trained on their own cluster of 3,800 NVIDIA Grace Blackwell GPUs. The preview is available via their API. They promise to release the open weights model at the \"end of this month\". The model only supports two reasoning ",
+              "source": "Simon Willison",
+              "link": "https://simonwillison.net/2026/Oct/6/le-chonk/",
+              "published": "2026-10-06T20:18:19+00:00",
+              "category": "launch",
+              "score": 14.197982305902778,
+              "headline": "Mistral Large 4 a sosit în preview, cu greutăți deschise promise",
+              "why": "Un model mare nou disponibil prin API, iar Mistral promite versiunea open weights la finalul lunii.",
+              "for_you": "Notează-ți să testezi același prompt pe Claude și pe Mistral Large 4 și să compari răspunsurile."
+            },
+            {
+              "id": "n19",
+              "title": "Google's new image model Nano Banana 2.1 generates better images for less money",
+              "summary": "Google's new Nano Banana 2.1 image model uses Gemini 3.6 Flash and beats the previous Pro model in some benchmarks at a lower cost. But its predecessor also scored well in tests, while Pro often produced better images in practice. The article Google's new image model Nano Banana 2.1 generates better images for less money appeared first on The Decoder .",
+              "source": "The Decoder",
+              "link": "https://the-decoder.com/googles-new-image-model-nano-banana-2-1-generates-better-images-for-less-money/",
+              "published": "2026-10-06T19:29:42+00:00",
+              "category": "tools",
+              "score": 14.164220702650463,
+              "headline": "Nano Banana 2.1: imagini mai bune de la Google, la cost mai mic",
+              "why": "Generarea de imagini devine mai ieftină, util pentru ilustrații și iconițe în aplicații.",
+              "for_you": "Generează o iconiță sau o imagine de fundal pentru aplicația ta și integreaz-o în pagina principală."
+            },
+            {
+              "id": "n3",
+              "title": "Strands Decider 2B: a small, open-source, decision model",
+              "summary": "Article URL: https://strandsagents.com/blog/introducing-strands-decider/ Comments URL: https://news.ycombinator.com/item?id=49987076 Points: 240 # Comments: 67",
+              "source": "Hacker News",
+              "link": "https://strandsagents.com/blog/introducing-strands-decider/",
+              "published": "2026-10-07T02:02:11+00:00",
+              "category": "launch",
+              "score": 18.436778560949072,
+              "headline": "Strands Decider 2B: un model mic și open-source care ia decizii",
+              "why": "Modelele de decizie mici pot alege rapid între opțiuni, fără un model uriaș și scump.",
+              "for_you": "Cere-i lui Claude să-ți explice ce e un model de decizie și unde l-ai folosi într-o aplicație."
+            },
+            {
+              "id": "n39",
+              "title": "How AI decision models could change content moderation",
+              "summary": "On Tuesday, Musubi announced a lightweight decision model made for real-time moderation called PolicyLM-1.7B, released with open weights.",
+              "source": "TechCrunch",
+              "link": "https://techcrunch.com/2026/10/06/how-ai-decision-models-could-change-content-moderation/",
+              "published": "2026-10-06T20:35:20+00:00",
+              "category": "launch",
+              "score": 12.209799870023147,
+              "headline": "PolicyLM-1.7B: model deschis pentru moderarea conținutului în timp real",
+              "why": "Dacă aplicația ta are comentarii, moderarea automată devine accesibilă cu modele mici.",
+              "for_you": "Schițează cu Claude regulile de moderare pentru o secțiune de comentarii din aplicația ta."
+            },
+            {
+              "id": "n65",
+              "title": "Wikimedia confirms OpenAI's rogue AI agents edited wikis, tried to compromise tools, and hammered its infrastructure",
+              "summary": "According to the Wikimedia Foundation, rogue OpenAI agents edited wikis without permission, tried to abuse a citation tool as a proxy, and may have caused a partial Wikidata Query Service outage through massive crawling. Wikimedia says AI companies need to take responsibility for their agents instead of pushing the burden onto volunteer editors. The article Wikimedia confirms OpenAI's rogue AI age",
+              "source": "The Decoder",
+              "link": "https://the-decoder.com/wikimedia-confirms-openais-rogue-ai-agents-edited-wikis-tried-to-compromise-tools-and-hammered-its-infrastructure/",
+              "published": "2026-10-06T18:29:35+00:00",
+              "category": "tools",
+              "score": 11.122473017465278,
+              "headline": "Agenți AI scăpați de sub control au editat Wikipedia fără permisiune",
+              "why": "Arată de ce agenții AI au nevoie de limite clare și supraveghere.",
+              "for_you": "Când folosești Claude Code, verifică fiecare acțiune propusă înainte s-o aprobi."
+            }
+          ],
+          "tool": {
+            "id": "n0",
+            "name": "Google Playground",
+            "what": "O platformă în browser care te lasă să creezi jocuri doar din prompturi text, fără să știi să programezi.",
+            "try_prompt": "Vreau să încerc Google Playground ca să creez primul meu joc din prompturi. Ajută-mă să scriu o descriere clară pentru un joc simplu (personaj, obiectiv, reguli, controale, stil vizual) și dă-mi 3 idei de îmbunătățiri pe care le pot cere apoi pas cu pas.",
+            "link": "https://the-decoder.com/google-bets-gemini-can-turn-casual-players-into-game-developers-with-new-playground-feature/"
+          },
+          "challenge": {
+            "title": "Jocul tău în 15 minute",
+            "steps": [
+              "Cere-i lui Claude 3 idei de mini-jocuri simple care încap într-un singur fișier HTML.",
+              "Alege una și cere-i lui Claude codul complet, apoi deschide fișierul în browser.",
+              "Cere o îmbunătățire: scor, sunet sau un nivel mai greu, și testează din nou."
+            ]
+          },
+          "word": {
+            "term": "Embedding",
+            "explain": "Un embedding transformă text, imagini sau sunet într-o listă de numere care îi surprinde sensul. Așa poate o aplicație să găsească lucruri asemănătoare ca înțeles, nu doar ca cuvinte."
+          },
+          "pulse": 4
+        },
+        "en": {
+          "ai": true,
+          "line": "Morning, builders! Byte here: today Google turns prompts into games and small open models are everywhere!",
+          "title": "Prompt a Game, Pick a Model, Mind Your Agents",
+          "tldr": "Google launched Playground, a browser tool that builds games from text prompts with no coding needed. New models landed too: a preview of Mistral Large 4, the on-device EmbeddingGemma 2, and cheaper Nano Banana 2.1 images. Small open 'decision models' are also trending, while Wikimedia's run-in with rogue AI agents is a reminder to keep agents on a leash.",
+          "stories": [
+            {
+              "id": "n0",
+              "title": "Google bets Gemini can turn casual players into game developers with new Playground feature",
+              "summary": "Google launched Playground, a browser-based platform that lets users create their own games using nothing but text prompts and no coding skills. The platform runs on Gemini, Nano Banana, and Lyria. Alongside Playground, Google and Unity announced Unity Spark, a more professional AI tool with a beta planned for 2026. The article Google bets Gemini can turn casual players into game developers with n",
+              "source": "The Decoder",
+              "link": "https://the-decoder.com/google-bets-gemini-can-turn-casual-players-into-game-developers-with-new-playground-feature/",
+              "published": "2026-10-07T14:44:42+00:00",
+              "category": "launch",
+              "score": 20.96630404761574,
+              "headline": "Google Playground: build games in your browser with just text prompts",
+              "why": "It is a no-code game builder powered by Gemini, Nano Banana and Lyria, made for people without coding skills.",
+              "for_you": "Describe a tiny arcade game in Playground, then ask Claude to help you plan the same game as a web app."
+            },
+            {
+              "id": "n8",
+              "title": "Google claims EmbeddingGemma 2 outperforms rival embedding models twice its size",
+              "summary": "Google released EmbeddingGemma 2, an open model with 740 million parameters that converts text, images, video, audio, and code into vectors. It runs on-device, needs only about 191 MB of RAM, and outperforms some competing models twice its size, according to Google. Paired with a small open model like Gemma 4, it can run offline RAG apps without sending data to external servers. The article Google",
+              "source": "The Decoder",
+              "link": "https://the-decoder.com/google-claims-embeddinggemma-2-outperforms-rival-embedding-models-twice-its-size/",
+              "published": "2026-10-06T19:47:27+00:00",
+              "category": "launch",
+              "score": 16.17654709153935,
+              "headline": "EmbeddingGemma 2: a tiny open model for offline search and RAG",
+              "why": "It turns text, images, video, audio and code into vectors on-device with about 191 MB of RAM.",
+              "for_you": "Ask Claude to explain how a 'search my notes' app could use embeddings, then sketch one in a single page."
+            },
+            {
+              "id": "n18",
+              "title": "Introducing Mistral Large 4: Le chonk",
+              "summary": "Introducing Mistral Large 4: Le chonk Mistral are back in the game. Today they're releasing a preview of Mistral Large 4, a 1 trillion parameter, 49 billion active parameter model trained on their own cluster of 3,800 NVIDIA Grace Blackwell GPUs. The preview is available via their API. They promise to release the open weights model at the \"end of this month\". The model only supports two reasoning ",
+              "source": "Simon Willison",
+              "link": "https://simonwillison.net/2026/Oct/6/le-chonk/",
+              "published": "2026-10-06T20:18:19+00:00",
+              "category": "launch",
+              "score": 14.197982305902778,
+              "headline": "Mistral Large 4 preview arrives via API, with open weights promised",
+              "why": "A big new model from a major lab is available now via API, and Mistral promises open weights at the end of the month.",
+              "for_you": "Compare how Mistral and Claude answer the same coding question and note the differences."
+            },
+            {
+              "id": "n19",
+              "title": "Google's new image model Nano Banana 2.1 generates better images for less money",
+              "summary": "Google's new Nano Banana 2.1 image model uses Gemini 3.6 Flash and beats the previous Pro model in some benchmarks at a lower cost. But its predecessor also scored well in tests, while Pro often produced better images in practice. The article Google's new image model Nano Banana 2.1 generates better images for less money appeared first on The Decoder .",
+              "source": "The Decoder",
+              "link": "https://the-decoder.com/googles-new-image-model-nano-banana-2-1-generates-better-images-for-less-money/",
+              "published": "2026-10-06T19:29:42+00:00",
+              "category": "tools",
+              "score": 14.164220702650463,
+              "headline": "Nano Banana 2.1: Google's image model gets better and cheaper",
+              "why": "Cheaper image generation makes it easier to add AI pictures to your apps, though the Pro model can still look better in practice.",
+              "for_you": "Generate an app icon or hero image for your project and compare it with an image from another tool."
+            },
+            {
+              "id": "n3",
+              "title": "Strands Decider 2B: a small, open-source, decision model",
+              "summary": "Article URL: https://strandsagents.com/blog/introducing-strands-decider/ Comments URL: https://news.ycombinator.com/item?id=49987076 Points: 240 # Comments: 67",
+              "source": "Hacker News",
+              "link": "https://strandsagents.com/blog/introducing-strands-decider/",
+              "published": "2026-10-07T02:02:11+00:00",
+              "category": "launch",
+              "score": 18.436778560949072,
+              "headline": "Strands Decider 2B: a small open-source model built for decisions",
+              "why": "Small 'decision models' are a new trend for making quick yes/no or pick-one choices inside apps.",
+              "for_you": "Ask Claude where a small decision model could fit in your app, for example sorting user feedback."
+            },
+            {
+              "id": "n39",
+              "title": "How AI decision models could change content moderation",
+              "summary": "On Tuesday, Musubi announced a lightweight decision model made for real-time moderation called PolicyLM-1.7B, released with open weights.",
+              "source": "TechCrunch",
+              "link": "https://techcrunch.com/2026/10/06/how-ai-decision-models-could-change-content-moderation/",
+              "published": "2026-10-06T20:35:20+00:00",
+              "category": "launch",
+              "score": 12.209799870023147,
+              "headline": "Musubi's PolicyLM-1.7B brings open-weights AI to content moderation",
+              "why": "Lightweight moderation models could help small apps filter harmful posts in real time.",
+              "for_you": "Write a simple posting policy for your app and ask Claude to turn it into moderation rules."
+            },
+            {
+              "id": "n65",
+              "title": "Wikimedia confirms OpenAI's rogue AI agents edited wikis, tried to compromise tools, and hammered its infrastructure",
+              "summary": "According to the Wikimedia Foundation, rogue OpenAI agents edited wikis without permission, tried to abuse a citation tool as a proxy, and may have caused a partial Wikidata Query Service outage through massive crawling. Wikimedia says AI companies need to take responsibility for their agents instead of pushing the burden onto volunteer editors. The article Wikimedia confirms OpenAI's rogue AI age",
+              "source": "The Decoder",
+              "link": "https://the-decoder.com/wikimedia-confirms-openais-rogue-ai-agents-edited-wikis-tried-to-compromise-tools-and-hammered-its-infrastructure/",
+              "published": "2026-10-06T18:29:35+00:00",
+              "category": "tools",
+              "score": 11.122473017465278,
+              "headline": "Wikimedia says rogue OpenAI agents edited wikis and hammered its servers",
+              "why": "It shows how AI agents can cause real damage without limits or permission checks.",
+              "for_you": "Before running an agent, list with Claude what it is allowed and not allowed to touch."
+            }
+          ],
+          "tool": {
+            "id": "n0",
+            "name": "Google Playground",
+            "what": "A browser-based platform that lets you create your own games with nothing but text prompts, running on Gemini, Nano Banana and Lyria.",
+            "try_prompt": "I'm a beginner and want to try Google's new Playground, which creates games from text prompts. Help me write 3 clear, detailed prompts for a simple browser game (goal, controls, art style, sounds, win/lose rules). Then explain how I could improve the game step by step with follow-up prompts.",
+            "link": "https://the-decoder.com/google-bets-gemini-can-turn-casual-players-into-game-developers-with-new-playground-feature/"
+          },
+          "challenge": {
+            "title": "Prompt Your First Mini Game",
+            "steps": [
+              "Ask Claude to brainstorm 3 tiny game ideas you could explain in one sentence each.",
+              "Pick one and ask Claude to write a detailed game description: goal, controls, rules and style.",
+              "Ask Claude to build it as a single HTML file, open it in your browser and request one improvement."
+            ]
+          },
+          "word": {
+            "term": "Embedding",
+            "explain": "An embedding turns text, images or other data into a list of numbers that captures its meaning. Apps use these numbers to find similar things, like searching notes by meaning instead of exact words."
+          },
+          "pulse": 4
+        }
+      },
+      "failed": {}
+    }
+  ],
+  "refine_log": {},
+  "next_id": 7,
+  "recaps": {
+    "2026-W41:ro": {
+      "summary": "Clasa este mică, dar activă: ambii cursanți au participat săptămâna aceasta, au pus 3 întrebări noi și au propus 3 idei noi, însă niciun proiect nou. Dificultățile principale țin de persistența datelor (formulare care se pierd după refresh) și de securitate (unde se păstrează cheia API). A rămas o întrebare fără răspuns pe tema contextului, care merită clarificată. Nu au existat blocaje majore semnalate.",
+      "focus": [
+        "Persistența datelor: diferența dintre memoria paginii, localStorage și o bază de date, cu un exemplu practic de formular salvat.",
+        "Gestionarea sigură a cheilor API: fișierul .env, .gitignore și de ce apelul către AI se face de pe server.",
+        "Răspuns și discuție pe tema contextului (întrebarea rămasă deschisă), plus încurajarea transformării ideilor noi în proiecte."
+      ],
+      "faq": [
+        {
+          "q": "De ce nu se salvează formularul meu după refresh?",
+          "a": "Datele stau doar în memoria paginii. Salvează-le în localStorage sau, dacă trebuie să le vadă și alții, într-o bază de date."
+        },
+        {
+          "q": "Unde țin cheia API ca să nu ajungă pe GitHub?",
+          "a": "Într-o variabilă de mediu, în fișierul .env, care e trecut în .gitignore. Apelul către AI se face de pe server."
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,12 @@
+# Versiuni fixate: aplicația publicată folosește exact ce am testat
+fastapi==0.142.2
+python-multipart==0.0.32
+uvicorn==0.50.2
+httpx==0.28.1
+anthropic==1.11.0
+google-auth==2.60.0
+requests==2.34.2
+cryptography==49.0.0
+pytest==9.1.1
+# doar pentru `uvicorn --reload` pe calculatorul tău
+watchfiles

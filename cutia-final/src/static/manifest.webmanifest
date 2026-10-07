@@ -1,0 +1,22 @@
+{
+  "name": "Cutia Clasei",
+  "short_name": "Cutia Clasei",
+  "description": "Platforma internă a cursului de vibe coding: întrebări, teme, idei, ora live, AI News.",
+  "start_url": "/static/index.html",
+  "scope": "/static/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0a0a12",
+  "theme_color": "#0a0a12",
+  "lang": "ro",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Ora live", "url": "/static/index.html#live", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Atelier", "url": "/static/index.html#workshop", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "AI News", "url": "/static/index.html#news", "icons": [{ "src": "icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

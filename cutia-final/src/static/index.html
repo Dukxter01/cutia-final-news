@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="ro" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0a0a12">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Cutia Clasei">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <title>Cutia Clasei</title>
+  <link rel="preload" href="fonts/InstrumentSerif-normal-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/Manrope-normal-400_700-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="fonts.css">
+  <link rel="stylesheet" href="styles.css">
+  <script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js" } }</script>
+  <script>
+    // Preferințele de afișare se aplică înainte de randare, ca să nu „clipească” pagina
+    try {
+      const d = document.documentElement, ls = localStorage;
+      const theme = ls.getItem("cutia-theme");
+      d.dataset.theme = ["dark", "light", "sunset", "ocean", "contrast"].includes(theme) ? theme : "dark";
+      d.dataset.motion = ls.getItem("cutia-motion") || "on";
+      d.dataset.size = ls.getItem("cutia-size") || "normal";
+      d.lang = ls.getItem("cutia-lang") || "ro";
+    } catch (_) {}
+  </script>
+</head>
+<body>
+  <div class="bg" aria-hidden="true">
+    <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+    <div class="grid"></div>
+    <div class="scan"></div>
+  </div>
+  <canvas id="confetti" aria-hidden="true"></canvas>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">{▣}</span>
+      <span class="brand-name">Cutia <span class="grad">Clasei</span></span>
+      <span class="course mono">vibe coding</span>
+    </div>
+    <div class="top-actions">
+      <button id="palette-btn" class="kbd-btn mono" title="Ctrl + K">⌘K</button>
+      <div class="menu-wrap">
+        <button id="lang-btn" class="icon-btn lang-btn" aria-haspopup="true" aria-expanded="false"></button>
+        <div id="lang-menu" class="menu hidden" role="menu"></div>
+      </div>
+      <button id="points-chip" class="points-chip hidden" title=""><span class="bolt">⚡</span><b id="points-chip-n">0</b></button>
+      <div class="menu-wrap app-only hidden">
+        <button id="bell-btn" class="icon-btn bell" aria-haspopup="true" aria-expanded="false">🔔<span id="bell-dot" class="dot-badge hidden"></span></button>
+        <div id="notif-menu" class="menu notif hidden" role="menu"></div>
+      </div>
+      <button id="settings-btn" class="icon-btn" data-i18n-title="settings">⚙</button>
+      <div id="user-box" class="user-box hidden">
+        <span id="user-avatar" class="avatar"></span>
+        <span id="user-name" class="user-name"></span>
+        <span id="user-role" class="pill"></span>
+        <button id="logout-btn" class="ghost small" data-i18n="logout"></button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============================== Login -->
+  <main id="login-view" class="login-view">
+    <section class="hero">
+      <p class="eyebrow mono" data-i18n="hero.eyebrow"></p>
+      <h1><span data-i18n="hero.title1"></span><br><span class="grad" data-i18n="hero.title2"></span></h1>
+      <p class="lead" data-i18n="hero.lead"></p>
+      <div class="terminal">
+        <div class="term-bar"><i></i><i></i><i></i><span class="mono">~/cutia-clasei</span></div>
+        <pre id="term-body" class="mono"></pre>
+      </div>
+      <div id="topic-marquee" class="marquee" aria-hidden="true"><div class="marquee-track"></div></div>
+    </section>
+
+    <form id="login-form" class="card glass login" novalidate>
+      <h2 id="login-title" data-i18n="login.title"></h2>
+      <p id="not-you" class="muted small hidden"><button type="button" class="link-btn" id="not-you-btn"></button></p>
+      <div class="auth-tabs" role="tablist">
+        <button type="button" role="tab" data-auth="in" class="on" data-i18n="login.tabIn"></button>
+        <button type="button" role="tab" data-auth="up" data-i18n="login.tabUp"></button>
+      </div>
+      <label id="name-field" class="hidden"><span data-i18n="login.name"></span>
+        <input id="login-name" maxlength="60" autocomplete="name" data-i18n-placeholder="login.namePh">
+      </label>
+      <label id="email-field"><span data-i18n="login.email"></span>
+        <input id="login-email" type="email" maxlength="200" autocomplete="email" required data-i18n-placeholder="login.emailPh">
+      </label>
+      <label id="password-field"><span data-i18n="login.password"></span>
+        <input id="login-password" type="password" maxlength="200" autocomplete="current-password" required>
+      </label>
+      <label id="class-field" class="hidden"><span data-i18n="login.classCode"></span>
+        <input id="login-class" maxlength="100" autocomplete="off" data-i18n-placeholder="login.classCodePh">
+      </label>
+      <details id="trainer-field" class="trainer-toggle hidden">
+        <summary data-i18n="login.amTrainer"></summary>
+        <label><span data-i18n="login.code"></span>
+          <input id="login-code" type="password" maxlength="100" autocomplete="off" data-i18n-placeholder="login.codePh">
+        </label>
+        <span class="hint" data-i18n="login.trainerHint"></span>
+      </details>
+      <span id="auth-hint" class="hint"></span>
+      <button type="submit" class="primary big"><span id="auth-submit"></span> <span class="kbd">↵</span></button>
+      <p id="login-error" class="error" role="alert"></p>
+      <p id="login-info" class="login-info hidden" role="status"></p>
+      <div id="demo-box" class="demo-box hidden">
+        <b data-i18n="login.demoTitle"></b>
+        <p id="demo-lead" class="small muted"></p>
+        <div id="demo-accounts" class="row"></div>
+      </div>
+      <div id="google-wrap" class="hidden">
+        <div class="divider" data-i18n="login.or"></div>
+        <div id="google-btn"></div>
+        <button type="button" id="supa-google" class="ghost big google-btn hidden"><span class="g-mark" aria-hidden="true">G</span> <span data-i18n="login.google"></span></button>
+      </div>
+      <p class="forgot" id="forgot" data-i18n="login.forgot"></p>
+      <p class="forgot hidden" id="forgot-supa"><button type="button" class="link-btn" id="forgot-btn" data-i18n="login.forgotLink"></button></p>
+      <p class="secured mono hidden" id="secured-by" data-i18n="login.securedBy"></p>
+    </form>
+  </main>
+
+  <!-- ============================== Platform shell -->
+  <div id="app-view" class="shell hidden">
+    <nav id="sidebar" class="sidebar" aria-label="Navigation">
+      <button class="nav-item" data-view="home"><span class="nav-ico">⌂</span><span class="nav-text" data-i18n="nav.home"></span></button>
+
+      <p class="nav-label private" id="nav-private-label"></p>
+      <button class="nav-item" data-view="messages"><span class="nav-ico">✉</span><span class="nav-text" data-i18n="nav.messages"></span><span id="m-badge" class="badge hidden"></span></button>
+      <button class="nav-item" data-view="questions"><span class="nav-ico">?</span><span class="nav-text" data-i18n="nav.questions"></span><span id="q-badge" class="badge hidden"></span></button>
+      <button class="nav-item" data-view="submissions"><span class="nav-ico">⇪</span><span class="nav-text" data-i18n="nav.submissions"></span><span id="s-badge" class="badge hidden"></span></button>
+      <button class="nav-item" data-view="workshop"><span class="nav-ico">⚒</span><span class="nav-text" data-i18n="nav.workshop"></span></button>
+
+      <p class="nav-label public" data-i18n="nav.public"></p>
+      <button class="nav-item" data-view="live"><span class="nav-ico live-dot">●</span><span class="nav-text" data-i18n="nav.live"></span><span id="live-badge" class="badge hidden" data-i18n="live.badge"></span></button>
+      <button class="nav-item" data-view="box"><span class="nav-ico">✦</span><span class="nav-text" data-i18n="nav.box"></span><span id="p-badge" class="badge soft hidden"></span></button>
+      <button class="nav-item" data-view="showcase"><span class="nav-ico">★</span><span class="nav-text" data-i18n="nav.showcase"></span></button>
+      <button class="nav-item" data-view="news"><span class="nav-ico">◉</span><span class="nav-text" data-i18n="nav.news"></span></button>
+      <button class="nav-item" data-view="points"><span class="nav-ico">⚡</span><span class="nav-text" data-i18n="nav.points"></span></button>
+      <button class="nav-item" data-view="guide"><span class="nav-ico">#</span><span class="nav-text" data-i18n="nav.guide"></span></button>
+
+      <div class="sidebar-foot mono"><span id="ai-status"></span></div>
+    </nav>
+    <button id="more-btn" class="more-btn" aria-label="More">☰</button>
+
+    <main class="content">
+      <!-- ------------------------- Acasă -->
+      <section id="view-home" class="view">
+        <div class="welcome">
+          <div>
+            <p id="greet-eyebrow" class="eyebrow mono"></p>
+            <h1 id="greet-title"></h1>
+            <p id="home-lead" class="muted"></p>
+          </div>
+          <div id="stats" class="stats"></div>
+        </div>
+        <div id="level-card" class="card level-card hidden"></div>
+        <div id="recap-card" class="card recap-card trainer-only hidden"></div>
+        <div id="announce-box" class="card announce hidden"></div>
+        <div id="actions" class="actions-grid"></div>
+        <div class="home-cols">
+          <div class="card panel">
+            <div class="panel-head"><h3 data-i18n="home.deadlines"></h3><button class="link-btn" data-goto="submissions" data-i18n="home.seeAll"></button></div>
+            <div id="home-deadlines" class="mini-list"></div>
+          </div>
+          <div class="card panel">
+            <div class="panel-head"><h3 data-i18n="home.insight"></h3><button class="link-btn" data-goto="news" data-i18n="home.seeAll"></button></div>
+            <div id="home-insight"></div>
+          </div>
+          <div class="card panel">
+            <div class="panel-head"><h3 id="home-recent-title"></h3><button class="link-btn" data-goto="questions" data-i18n="home.seeAll"></button></div>
+            <div id="home-recent" class="mini-list"></div>
+          </div>
+          <div class="card panel">
+            <div class="panel-head"><h3 data-i18n="home.top"></h3><button class="link-btn" data-goto="box" data-i18n="home.seeAll"></button></div>
+            <div id="home-top" class="mini-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------- Mesaje (privat) -->
+      <section id="view-messages" class="view hidden">
+        <div class="view-head">
+          <span class="space private" data-space="private"></span>
+          <h1 data-i18n="m.title"></h1>
+          <p class="muted" id="m-lead"></p>
+        </div>
+        <div id="chat-layout" class="chat-layout">
+          <aside id="thread-list" class="card threads hidden">
+            <input id="thread-search" type="search" data-i18n-placeholder="m.search">
+            <div id="threads"></div>
+          </aside>
+          <div class="card chat">
+            <div id="chat-head" class="chat-head"></div>
+            <div id="chat-log" class="chat-log" aria-live="polite"></div>
+            <form id="chat-form" class="chat-form">
+              <textarea id="chat-input" rows="1" maxlength="4000" data-i18n-placeholder="m.ph"></textarea>
+              <button type="submit" class="primary glow" data-i18n="m.send"></button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------- Întrebări (privat) -->
+      <section id="view-questions" class="view hidden">
+        <div class="view-head">
+          <span class="space private" data-space="private"></span>
+          <h1 data-i18n="q.title"></h1>
+          <p class="muted" id="q-lead"></p>
+        </div>
+        <form id="question-form" class="card composer student-only">
+          <div class="composer-head">
+            <span class="prompt mono">❯</span>
+            <h2 data-i18n="q.composerTitle"></h2>
+          </div>
+          <p class="field-label" data-i18n="q.topicLabel"></p>
+          <div id="topic-chips" class="chips" role="radiogroup"></div>
+          <textarea id="question-text" rows="3" maxlength="2000" required data-i18n-placeholder="q.placeholder"></textarea>
+          <div id="topic-hint" class="topic-hint"></div>
+          <div class="row">
+            <label class="check"><input type="checkbox" id="question-anon"> <span data-i18n="q.anon"></span></label>
+            <label class="check"><input type="checkbox" id="question-faq"> <span data-i18n="q.faqOk"></span></label>
+            <button type="submit" class="primary"><span data-i18n="q.send"></span> <span class="kbd">Ctrl ↵</span></button>
+          </div>
+        </form>
+
+        <div class="toolbar">
+          <h2 id="questions-title"></h2>
+          <input id="question-search" type="search" data-i18n-placeholder="q.search">
+          <select id="question-topic"></select>
+          <select id="question-filter">
+            <option value="all" data-i18n="q.all"></option>
+            <option value="open" data-i18n="q.open"></option>
+            <option value="answered" data-i18n="q.answered"></option>
+          </select>
+        </div>
+        <div id="questions-list" class="list"></div>
+      </section>
+
+      <!-- ------------------------- Teme & proiecte (privat) -->
+      <section id="view-submissions" class="view hidden">
+        <div class="view-head">
+          <span class="space private" data-space="private"></span>
+          <h1 data-i18n="s.viewTitle"></h1>
+          <p class="muted" id="s-lead"></p>
+        </div>
+
+        <form id="assignment-form" class="card composer trainer-only">
+          <div class="composer-head"><span class="prompt mono">📌</span><h2 data-i18n="a.new"></h2></div>
+          <label><span data-i18n="a.fTitle"></span><input id="a-title" maxlength="200" required data-i18n-placeholder="a.fTitlePh"></label>
+          <label><span data-i18n="a.fDesc"></span><textarea id="a-desc" rows="2" maxlength="4000"></textarea></label>
+          <div class="row two">
+            <label><span data-i18n="a.fDue"></span><input id="a-due" type="datetime-local"></label>
+            <label><span data-i18n="a.fPoints"></span><input id="a-points" type="number" min="0" max="100" value="20"></label>
+          </div>
+          <div class="row end"><button type="submit" class="primary glow" data-i18n="a.create"></button></div>
+        </form>
+
+        <div class="card panel assignments-panel">
+          <div class="panel-head"><h3 data-i18n="a.title"></h3></div>
+          <div id="assignments" class="mini-list"></div>
+        </div>
+
+        <form id="submission-form" class="card composer student-only">
+          <div class="composer-head">
+            <span class="prompt mono">⇪</span>
+            <h2 data-i18n="s.title"></h2>
+          </div>
+          <p class="muted small" data-i18n="s.lead"></p>
+          <p class="field-label" data-i18n="s.kind"></p>
+          <div id="kind-chips" class="chips"></div>
+          <label><span data-i18n="s.forAssignment"></span><select id="s-assignment"></select></label>
+          <label><span data-i18n="s.fTitle"></span>
+            <input id="s-title" maxlength="200" required data-i18n-placeholder="s.fTitlePh">
+          </label>
+          <label><span data-i18n="s.fLink"></span>
+            <span class="input-with-btn">
+              <input id="s-link" type="url" maxlength="500" data-i18n-placeholder="s.fLinkPh">
+              <button type="button" id="s-link-check" class="small ghost" data-i18n="rc.checkBtn"></button>
+            </span>
+          </label>
+          <label><span data-i18n="s.fNote"></span>
+            <textarea id="s-note" rows="3" maxlength="4000" data-i18n-placeholder="s.fNotePh"></textarea>
+          </label>
+
+          <div id="dropzone" class="dropzone" tabindex="0" role="button">
+            <div class="dz-ico">⇪</div>
+            <div><span data-i18n="s.drop"></span> <u data-i18n="s.browse"></u></div>
+            <div class="muted small mono" data-i18n="s.dropHint"></div>
+            <input id="s-files" type="file" multiple hidden>
+          </div>
+          <div id="file-list" class="file-list"></div>
+
+          <div id="checklist-box" class="checklist">
+            <p class="field-label" data-i18n="s.checklist"></p>
+            <div id="checklist"></div>
+            <details class="howto">
+              <summary data-i18n="s.howto"></summary>
+              <ol id="howto-steps"></ol>
+            </details>
+          </div>
+
+          <div id="upload-progress" class="progress hidden"><i></i></div>
+          <div class="row end">
+            <button type="submit" id="s-send" class="primary glow" data-i18n="s.send"></button>
+          </div>
+          <p id="submission-error" class="error" role="alert"></p>
+        </form>
+
+        <div class="toolbar">
+          <h2 id="submissions-title"></h2>
+          <input id="submission-search" type="search" data-i18n-placeholder="q.search">
+          <select id="submission-status"></select>
+        </div>
+        <div id="submissions-list" class="list"></div>
+      </section>
+
+      <!-- ------------------------- Cutia de idei (public) -->
+      <section id="view-box" class="view hidden">
+        <div class="view-head">
+          <span class="space public" data-space="public"></span>
+          <h1 data-i18n="box.title"></h1>
+          <p class="muted" data-i18n="box.lead"></p>
+        </div>
+
+        <div id="proposal-wizard" class="card wizard student-only">
+          <div class="composer-head">
+            <span class="prompt mono">✦</span>
+            <h2 data-i18n="p.title"></h2>
+          </div>
+          <p class="muted small" data-i18n="p.lead"></p>
+
+          <div id="drafts-panel" class="drafts">
+            <div class="drafts-head">
+              <span class="mono small" id="drafts-title"></span>
+              <span id="draft-status" class="muted small mono" aria-live="polite"></span>
+              <button type="button" id="new-draft" class="small ghost" data-i18n="p.newDraft"></button>
+            </div>
+            <div id="drafts-list" class="drafts-list"></div>
+          </div>
+
+          <ol class="pipeline" id="pipeline">
+            <li data-step="1"><b data-i18n="p.s1"></b><span data-i18n="p.s1d"></span></li>
+            <li data-step="2"><b data-i18n="p.s2"></b><span data-i18n="p.s2d"></span></li>
+            <li data-step="3"><b data-i18n="p.s3"></b><span data-i18n="p.s3d"></span></li>
+            <li data-step="4"><b data-i18n="p.s4"></b><span data-i18n="p.s4d"></span></li>
+            <li data-step="5"><b data-i18n="p.s5"></b><span data-i18n="p.s5d"></span></li>
+          </ol>
+
+          <form id="proposal-form" class="stage">
+            <label><span data-i18n="p.fTitle"></span>
+              <input id="p-title" maxlength="200" data-i18n-placeholder="p.fTitlePh">
+            </label>
+            <label><span data-i18n="p.fDesc"></span>
+              <textarea id="p-description" rows="3" maxlength="4000" data-i18n-placeholder="p.fDescPh"></textarea>
+            </label>
+            <label><span data-i18n="p.fAud"></span>
+              <input id="p-audience" maxlength="500" data-i18n-placeholder="p.fAudPh">
+            </label>
+            <div class="row end">
+              <button type="button" class="ghost save-draft" data-i18n="p.saveDraft"></button>
+              <button type="submit" class="primary glow" data-i18n="p.toAi"></button>
+            </div>
+          </form>
+
+          <div id="ai-thinking" class="stage terminal hidden" aria-live="polite">
+            <div class="term-bar"><i></i><i></i><i></i><span class="mono" data-i18n="p.aiReads"></span></div>
+            <pre id="ai-log" class="mono"></pre>
+          </div>
+
+          <div id="refine-result" class="stage hidden">
+            <div class="understood">
+              <div class="ai-tag mono" data-i18n="p.understood"></div>
+              <p id="understood-text"></p>
+              <p id="refine-notes" class="muted small"></p>
+            </div>
+
+            <div id="diff-box" class="diff-box hidden">
+              <div class="ai-tag mono" data-i18n="p.diffTitle"></div>
+              <p id="diff-text" class="diff-text"></p>
+              <p class="muted small" data-i18n="p.diffLegend"></p>
+            </div>
+
+            <div id="missing-box" class="missing hidden">
+              <div class="ai-tag mono" data-i18n="p.needs"></div>
+              <div id="missing-list"></div>
+              <div class="row end">
+                <button id="apply-answers" class="primary" data-i18n="p.reapply"></button>
+              </div>
+            </div>
+
+            <h3><span data-i18n="p.final"></span> <span class="muted small" data-i18n="p.editable"></span></h3>
+            <label><span data-i18n="p.fTitle"></span> <input id="f-title" maxlength="200"></label>
+            <label><span data-i18n="p.fDesc"></span> <textarea id="f-description" rows="4" maxlength="4000"></textarea></label>
+            <label><span data-i18n="p.fAud"></span> <input id="f-audience" maxlength="500"></label>
+            <label class="check approve"><input type="checkbox" id="approve"> <span data-i18n="p.approve"></span></label>
+            <div class="row end">
+              <button id="back-edit" class="ghost" data-i18n="p.back"></button>
+              <button type="button" class="ghost save-draft" data-i18n="p.saveDraft"></button>
+              <button id="submit-proposal" class="primary glow" disabled data-i18n="p.submit"></button>
+            </div>
+          </div>
+          <p id="proposal-error" class="error" role="alert"></p>
+        </div>
+
+        <div id="my-proposals" class="card panel student-only">
+          <div class="panel-head"><h3 data-i18n="p.mine"></h3><span id="my-count" class="muted small mono"></span></div>
+          <div id="my-proposals-list" class="mini-list"></div>
+        </div>
+
+        <div class="toolbar">
+          <h2 data-i18n="p.class"></h2>
+          <input id="proposal-search" type="search" data-i18n-placeholder="q.search">
+          <select id="proposal-sort">
+            <option value="votes" data-i18n="p.sortVotes"></option>
+            <option value="new" data-i18n="p.sortNew"></option>
+            <option value="chosen" data-i18n="p.sortChosen"></option>
+          </select>
+          <button type="button" id="projector-btn" class="small trainer-only" data-i18n="p.projector"></button>
+          <button type="button" id="export-btn" class="small ghost trainer-only" data-i18n="p.export"></button>
+        </div>
+        <div id="proposals-list" class="list"></div>
+      </section>
+
+      <!-- ------------------------- AI News (public) -->
+      <section id="view-news" class="view hidden">
+        <div class="view-head">
+          <span class="space public" data-space="public"></span>
+          <h1 data-i18n="n.title"></h1>
+          <p class="muted" data-i18n="n.lead"></p>
+        </div>
+        <!-- Byte, robotul de știri: briefing-ul zilei (o dată la 24 de ore) -->
+        <section id="byte" class="byte card" aria-live="polite">
+          <div class="byte-top">
+            <svg class="byte-bot" viewBox="0 0 120 120" aria-hidden="true">
+              <defs>
+                <linearGradient id="byte-shell" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stop-color="var(--a1)"/><stop offset=".55" stop-color="var(--a3)"/><stop offset="1" stop-color="var(--a2)"/>
+                </linearGradient>
+                <clipPath id="byte-visor-clip"><rect x="28" y="44" width="64" height="34" rx="17"/></clipPath>
+              </defs>
+              <line x1="60" y1="26" x2="60" y2="14" class="byte-antenna"/>
+              <circle cx="60" cy="11" r="5" class="byte-bulb"/>
+              <rect x="16" y="26" width="88" height="70" rx="30" fill="url(#byte-shell)" class="byte-head"/>
+              <rect x="10" y="50" width="8" height="22" rx="4" class="byte-ear"/>
+              <rect x="102" y="50" width="8" height="22" rx="4" class="byte-ear"/>
+              <rect x="28" y="44" width="64" height="34" rx="17" class="byte-visor"/>
+              <g clip-path="url(#byte-visor-clip)"><rect x="20" y="44" width="10" height="34" class="byte-scan"/></g>
+              <g class="byte-eyes"><rect x="42" y="53" width="9" height="15" rx="4.5"/><rect x="69" y="53" width="9" height="15" rx="4.5"/></g>
+              <path d="M52 86 Q60 91 68 86" class="byte-mouth"/>
+            </svg>
+            <div class="byte-intro">
+              <p class="eyebrow mono" id="byte-eyebrow"></p>
+              <h2 id="byte-title"></h2>
+              <p class="byte-say" id="byte-say"></p>
+            </div>
+            <div class="byte-pulse" id="byte-pulse"></div>
+          </div>
+          <div id="byte-body"></div>
+        </section>
+
+        <h2 class="news-all-title" data-i18n="byte.allNews"></h2>
+        <div class="toolbar">
+          <div id="news-cats" class="chips news-cats"></div>
+          <span id="news-meta" class="muted small mono"></span>
+          <button id="news-refresh" class="small" data-i18n="n.refresh"></button>
+        </div>
+        <div id="news-list" class="news-grid"></div>
+      </section>
+
+      <!-- ------------------------- Atelier (privat): Verifică repo-ul, Error Doctor, Prompt Lab -->
+      <section id="view-workshop" class="view hidden">
+        <div class="view-head">
+          <span class="space private" data-space="private"></span>
+          <h1 data-i18n="ws.title"></h1>
+          <p class="muted" data-i18n="ws.lead"></p>
+        </div>
+        <div class="ws-tabs" role="tablist">
+          <button type="button" role="tab" data-ws="repo"><b>🔍</b><span data-i18n="ws.repo"></span><small data-i18n="ws.repoD"></small></button>
+          <button type="button" role="tab" data-ws="doctor"><b>🩺</b><span data-i18n="ws.doctor"></span><small data-i18n="ws.doctorD"></small></button>
+          <button type="button" role="tab" data-ws="prompt"><b>🧪</b><span data-i18n="ws.prompt"></span><small data-i18n="ws.promptD"></small></button>
+        </div>
+
+        <div id="ws-repo" class="ws-pane">
+          <form id="repo-form" class="card composer">
+            <label><span data-i18n="rc.label"></span>
+              <input id="repo-url" type="url" maxlength="300" placeholder="https://github.com/…/cutia-clasei-…" autocomplete="off">
+            </label>
+            <p class="muted small" data-i18n="rc.hint"></p>
+            <div class="row end"><button type="submit" class="primary" data-i18n="rc.run"></button></div>
+          </form>
+          <div id="repo-result"></div>
+        </div>
+
+        <div id="ws-doctor" class="ws-pane hidden">
+          <form id="doctor-form" class="card composer">
+            <label><span data-i18n="doc.label"></span>
+              <textarea id="doc-text" rows="6" maxlength="8000" class="mono" data-i18n-placeholder="doc.ph"></textarea>
+            </label>
+            <div class="row">
+              <label class="file-pick"><input id="doc-image" type="file" accept="image/png,image/jpeg,image/webp"><span data-i18n="doc.image"></span></label>
+              <span id="doc-image-name" class="muted small mono"></span>
+              <button type="submit" class="primary" data-i18n="doc.run"></button>
+            </div>
+            <p class="muted small" data-i18n="doc.privacy"></p>
+          </form>
+          <div id="doc-result"></div>
+          <div class="card panel"><div class="panel-head"><h3 data-i18n="doc.history"></h3></div><div id="doc-history" class="mini-list"></div></div>
+        </div>
+
+        <div id="ws-prompt" class="ws-pane hidden">
+          <form id="prompt-form" class="card composer">
+            <label><span data-i18n="pl.label"></span>
+              <textarea id="pl-text" rows="6" maxlength="6000" data-i18n-placeholder="pl.ph"></textarea>
+            </label>
+            <div class="row end"><button type="submit" class="primary" data-i18n="pl.run"></button></div>
+          </form>
+          <div id="pl-result"></div>
+        </div>
+      </section>
+
+      <!-- ------------------------- Ora live (public, în timpul orei) -->
+      <section id="view-live" class="view hidden">
+        <div class="view-head">
+          <span class="space public" data-space="public"></span>
+          <h1 data-i18n="live.title"></h1>
+          <p class="muted" id="live-lead"></p>
+        </div>
+        <div id="live-body"></div>
+      </section>
+
+      <!-- ------------------------- Demo Day (public) -->
+      <section id="view-showcase" class="view hidden">
+        <div class="view-head">
+          <span class="space public" data-space="public"></span>
+          <h1 data-i18n="sc.title"></h1>
+          <p class="muted" data-i18n="sc.lead"></p>
+        </div>
+        <div id="spotlight"></div>
+        <form id="showcase-form" class="card composer student-only">
+          <div class="composer-head"><span class="prompt mono">★</span><h2 data-i18n="sc.new"></h2></div>
+          <div class="row two">
+            <label><span data-i18n="sc.fTitle"></span><input id="sc-title" maxlength="120" required></label>
+            <label><span data-i18n="sc.fLive"></span><input id="sc-live" type="url" maxlength="300" placeholder="https://…"></label>
+          </div>
+          <label><span data-i18n="sc.fDesc"></span><textarea id="sc-desc" rows="3" maxlength="1500" data-i18n-placeholder="sc.fDescPh"></textarea></label>
+          <div class="row two">
+            <label><span data-i18n="sc.fRepo"></span><input id="sc-repo" type="url" maxlength="300" placeholder="https://github.com/…"></label>
+            <label class="file-pick"><input id="sc-image" type="file" accept="image/png,image/jpeg,image/webp"><span data-i18n="sc.fImage"></span></label>
+          </div>
+          <div class="row end"><span id="sc-image-name" class="muted small mono"></span><button type="submit" class="primary glow" data-i18n="sc.publish"></button></div>
+        </form>
+        <div id="showcase-list" class="showcase-grid"></div>
+      </section>
+
+      <!-- ------------------------- Puncte & clasament (public) -->
+      <section id="view-points" class="view hidden">
+        <div class="view-head">
+          <span class="space public" data-space="public"></span>
+          <h1 data-i18n="pt.title"></h1>
+          <p class="muted" id="pt-lead"></p>
+        </div>
+        <div id="my-points" class="student-only"></div>
+        <form id="bonus-form" class="card composer trainer-only">
+          <div class="composer-head"><h2 data-i18n="pt.bonusTitle"></h2></div>
+          <div class="row three">
+            <label><span data-i18n="pt.student"></span><select id="bonus-student"></select></label>
+            <label><span data-i18n="pt.points"></span><input id="bonus-points" type="number" min="-100" max="100" value="10"></label>
+            <label class="grow"><span data-i18n="pt.reason"></span><input id="bonus-reason" maxlength="200" data-i18n-placeholder="pt.reasonPh"></label>
+          </div>
+          <div class="row">
+            <div class="seg" id="bonus-quick"></div>
+            <button type="button" id="reset-pass" class="small ghost" data-i18n="pt.reset"></button>
+            <button type="submit" class="primary glow" data-i18n="pt.give"></button>
+          </div>
+          <p id="reset-result" class="muted small mono" aria-live="polite"></p>
+        </form>
+        <div class="card panel">
+          <div class="panel-head"><h3 data-i18n="pt.board"></h3></div>
+          <div id="podium" class="podium"></div>
+          <div id="board" class="board"></div>
+        </div>
+      </section>
+
+      <!-- ------------------------- Ghid (public) -->
+      <section id="view-guide" class="view hidden">
+        <div class="view-head">
+          <span class="space public" data-space="public"></span>
+          <h1 data-i18n="g.title"></h1>
+          <p class="muted" data-i18n="g.lead"></p>
+        </div>
+        <div id="heat" class="card heat hidden"></div>
+        <div id="topic-grid" class="topic-grid"></div>
+
+        <h2 class="section-title" data-i18n="faq.title"></h2>
+        <div id="faq-trainer" class="trainer-only"></div>
+        <div id="faq-list" class="faq-list"></div>
+
+        <h2 class="section-title" data-i18n="hall.title"></h2>
+        <p class="muted" data-i18n="hall.lead"></p>
+        <div id="hall-list" class="hall-grid"></div>
+      </section>
+    </main>
+
+    <footer class="statusbar mono" aria-hidden="true">
+      <span class="dot"></span><span id="sb-online"></span>
+      <span class="sep">│</span><span id="sb-space"></span>
+      <span class="sep">│</span><span id="sb-ai"></span>
+      <span class="sb-right" id="sb-lang"></span>
+    </footer>
+  </div>
+
+  <!-- ============================== Drawer (topic din ghid / setări) -->
+  <div id="drawer-backdrop" class="backdrop hidden"></div>
+  <aside id="drawer" class="drawer hidden" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+    <button id="drawer-close" class="icon-btn drawer-close" data-i18n-title="g.close">✕</button>
+    <div id="drawer-body"></div>
+  </aside>
+
+  <!-- ============================== Command palette (Ctrl+K) -->
+  <div id="palette" class="palette-wrap hidden" role="dialog" aria-modal="true">
+    <div class="palette card glass">
+      <input id="palette-input" class="mono" autocomplete="off" data-i18n-placeholder="k.ph">
+      <div id="palette-list" class="palette-list" role="listbox"></div>
+    </div>
+  </div>
+
+  <!-- ============================== Welcome tour -->
+  <div id="onboarding" class="palette-wrap hidden" role="dialog" aria-modal="true">
+    <div class="onboard card glass">
+      <h2 id="ob-title"></h2>
+      <p class="muted" data-i18n="ob.lead"></p>
+      <div class="ob-grid">
+        <div><b data-i18n="ob.private"></b><span data-i18n="ob.privateD"></span></div>
+        <div><b data-i18n="ob.public"></b><span data-i18n="ob.publicD"></span></div>
+        <div><b data-i18n="ob.points"></b><span data-i18n="ob.pointsD"></span></div>
+        <div><b data-i18n="ob.palette"></b><span data-i18n="ob.paletteD"></span></div>
+      </div>
+      <button id="ob-go" class="primary glow big" data-i18n="ob.go"></button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script src="i18n/core.js"></script>
+  <script src="app.js"></script>
+  <script type="module" src="intro.js"></script>
+<div id="projector" class="projector hidden" role="dialog" aria-modal="true" aria-labelledby="proj-title"></div>
+</body>
+</html>
