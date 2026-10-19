@@ -13,7 +13,7 @@ Instrucțiuni pentru Claude (și pentru oricine lucrează în proiect). Citește
 
 Interfața e în **6 limbi** (ro, en, fr, it, es, de), are designul „Aurora” cu 5 stiluri (Aurora, Perlă, Apus, Ocean, Contrast mare) și un robot 3D care îl salută pe utilizator pe nume la intrare (7 secunde, apoi interfața).
 
-**Conturi:** dacă sunt setate `SUPABASE_URL` + `SUPABASE_ANON_KEY`, conturile merg prin **Supabase Auth** (confirmare pe email, resetare cu link, Google prin Supabase; `src/supa.py`). Altfel: email + parolă (minim 8 caractere) sau Google (dacă e setat `GOOGLE_CLIENT_ID`). Rolul de trainer vine din `TRAINER_EMAILS` sau din `TRAINER_CODE` la crearea contului. `CLASS_CODE` (opțional) limitează conturile de student la clasa ta. Trainerul anunță teme cu termen și puncte; studenții primesc puncte, niveluri și badge-uri.
+**Conturi:** toată lumea intră cu **email + parolă**. Oricine își face cont singur (`POST /api/register`: nume, email, parolă) și devine **student**. Trainer e doar emailul din `TRAINER_EMAILS` (implicit `stoichin.radu23@gmail.com`); contul lui cere `TRAINER_CODE` dacă e setat (altfel merge doar cât nu există încă un trainer), ca nimeni să nu-și însușească emailul trainerului. `CUTIA_REGISTRATION=0` închide înscrierile. Trainerul poate face și el conturi de student (`POST /api/students`), le schimbă numele/parola (`PATCH`) sau le șterge (`DELETE`). Trainerul anunță teme cu termen și puncte; studenții primesc puncte, niveluri și badge-uri.
 
 ## Minimul obligatoriu (din fișa trainerului): nu se strică niciodată
 
@@ -37,10 +37,11 @@ Ce verifică AI-ul la fiecare propunere: **problema** (ce rezolvă și pentru ci
 5. **Fișierele încărcate** se salvează cu nume aleatorii în `data/uploads/`, se descarcă doar prin API (după verificarea accesului), mereu ca `attachment` + `application/octet-stream` + `nosniff`. Limite: 5 fișiere, 10 MB, extensii din `ALLOWED_EXTENSIONS`.
 6. **Linkurile** trimise de utilizatori se acceptă doar dacă încep cu `http://` sau `https://` (fără `javascript:`), verificat pe server și în interfață.
 7. **Fără `innerHTML` cu text de la utilizatori sau de la AI.** În `app.js` totul se construiește cu `el(...)` și noduri text; markdown-ul AI trece prin `renderMd()`, care nu folosește HTML.
-8. Parolele se salvează doar ca hash PBKDF2 cu salt; sesiunile doar ca hash SHA-256 al tokenului. Login: același mesaj pentru email greșit și parolă greșită, blocare 10 minute după 5 încercări. Tokenul Google se verifică pe server cu `google-auth`, doar pentru emailuri verificate. Emailurile studenților nu ajung niciodată la alți studenți (doar trainerul le vede).
+8. Parolele se salvează doar ca hash PBKDF2 cu salt. Sesiunile sunt tokenuri semnate HMAC (`make_token` / `read_token`), cu cheia din `SESSION_SECRET` sau derivată din `SUPABASE_SECRET_KEY`; „Ieși” pune hash-ul tokenului în `db["revoked"]`, iar o parolă nouă (`set_password`) crește `gen` și închide toate sesiunile contului. `current_user` verifică semnătura, expirarea, lista de tokenuri închise și că utilizatorul încă există. Login: același mesaj pentru utilizator greșit și parolă greșită, blocare 10 minute după 5 încercări (și la codul de trainer). Doar trainerul vede utilizatorii studenților.
 12. **Propunerile retrase** nu apar în cutia publică (doar autorului și trainerului), nu mai pot fi votate sau alese și nu aduc puncte pentru idee și voturi. Doar autorul le poate retrage sau pune înapoi.
 13. **Ciornele sunt private**: pe server doar proprietarul le vede (altcuiva îi răspundem 404); ciornele locale din browser se șterg la „Ieși”.
-14. **Supabase:** orice token Supabase venit din browser se verifică pe server cu `supa.get_user()` (întrebăm Supabase, nu decodăm noi tokenul) și trebuie să aibă emailul confirmat. Pentru conturi se folosește anon key. Pentru date și fișiere (`src/store.py`) serverul folosește `SUPABASE_SECRET_KEY`: doar din variabilele de mediu ale serverului, niciodată în browser, în cod sau pe GitHub. Tabelul `cutia_state` are RLS pornit și **nicio politică** (vezi `supabase/schema.sql`); nu adăuga politici care să-l deschidă pentru anon/authenticated. `TRAINER_EMAILS` dă rol de trainer doar pentru emailuri dovedite (Google sau proiect cu „Confirm email”). „Ai uitat parola?” răspunde la fel dacă emailul are cont sau nu. Testele folosesc un Supabase fals (`FakeSupabase`), niciodată proiectul real.
+14. **Supabase (date și fișiere, `src/store.py`):** serverul folosește `SUPABASE_SECRET_KEY`, doar din variabilele de mediu ale serverului, niciodată în browser, în cod sau pe GitHub. Tabelul `cutia_state` are RLS pornit și **nicio politică**, iar `cutia_sync` / `cutia_commit` se pot rula doar ca `service_role` (vezi `supabase/schema.sql`); nu adăuga politici sau grant-uri pentru anon/authenticated. Testele folosesc un Supabase fals (`FakeSupabaseDB`), niciodată proiectul real.
+23. **Vercel (`SERVERLESS`):** fără fire în fundal și fără disc. `SyncMiddleware` face, pentru fiecare cerere `/api/`: `sync_in()` → cererea → `commit()`; la conflict (altă copie a scris) reia cererea, de maxim 4 ori. Deci un handler trebuie să poată fi reluat: modifică doar `db` și apelează `save_db()`; nu ține date în variabile globale în afară de cache-uri. Briefing-ul îl pornește `GET /api/cron/digest` (Vercel Cron, cu `CRON_SECRET`). O cerere are maxim ~4,5 MB (`MAX_UPLOAD_MB = 4`).
 15. **Ora live:** „M-am blocat” e anonim (se întoarce doar numărul), întrebările anonime nu au nume nici pentru trainer, răspunsurile la biletul de ieșire le vede doar trainerul (și fiecare student pe al lui). Doar trainerul pornește/încheie ora, voturile și biletul.
 16. **Atelier:** „Verifică repo-ul” vorbește doar cu `api.github.com` și `raw.githubusercontent.com`, cu owner/repo validate (`REPO_RE`), fără să urmeze redirecturi; cheile găsite se arată mascate. Error Doctor, Prompt Lab și Hall of Prompts trec textul prin `tools.redact()` înainte de salvare sau de Claude. Imaginile se acceptă doar ca PNG/JPEG/WebP verificate după primii octeți (`image_type`) și se servesc cu `nosniff`.
 17. **Notificări push:** textul e generic (fără conținut privat pe ecranul blocat), în limba destinatarului; mesajul e criptat per dispozitiv (`src/webpush.py`, RFC 8291 + VAPID). `VAPID_PRIVATE_KEY` e secret, ca orice cheie.
@@ -59,7 +60,7 @@ Ce verifică AI-ul la fiecare propunere: **problema** (ce rezolvă și pentru ci
 
 ## Reguli pentru AI
 
-- Modelul implicit: `claude-opus-5-5` (`CUTIA_MODEL`). Răspunsurile vin în limba interfeței (antetul `X-Lang`).
+- Modelul implicit: `claude-sonnet-5-5` (`CUTIA_MODEL`). Răspunsurile vin în limba interfeței (antetul `X-Lang`).
 - Propuneri: răspuns structurat (JSON schema), maxim 3 întrebări, nu inventează funcții, câmpurile goale rămân goale. Fără cheie → `refine_local()` (retușare simplă, aceleași câmpuri).
 - **Nimic nu se trimite fără acordul studentului**: AI-ul doar propune; trimiterea cere checkbox-ul de aprobare, iar orice editare cere o nouă aprobare.
 - Răspunsul rapid la întrebări (`answer_question`) e marcat mereu „AI · neverificat de trainer”. Răspunsul trainerului rămâne cel **oficial** și apare primul. Se generează o singură dată per întrebare.
@@ -77,8 +78,7 @@ src/ai.py                 Modulul AI: retușarea propunerilor + tutorul pentru �
 src/news.py               AI News: surse RSS/Atom, filtrare, categorii, cache, alegere cu Claude
 src/digest.py             Byte: briefing-ul zilei (ultimele 24h), programare, scriere cu Claude, varianta locală
 src/points.py             Reguli de puncte, niveluri, badge-uri, serii și misiuni săptămânale
-src/supa.py               Supabase Auth prin REST (httpx): cont nou, intrare, verificare token, resetare
-src/store.py              Datele (Postgres, tabelul cutia_state) și fișierele (Storage) în Supabase
+src/store.py              Datele (Postgres: cutia_state + cutia_sync/cutia_commit) și fișierele (Storage) în Supabase
 src/repocheck.py          „Verifică repo-ul”: lista „Gata când”, chei API în cod și în istoric
 src/tools.py              Error Doctor, Prompt Lab, kit de start, recap săptămânal
 src/webpush.py            Notificări push (criptare RFC 8291 + semnătură VAPID)
@@ -95,27 +95,30 @@ src/static/vendor/        Three.js + RoundedBoxGeometry + RoomEnvironment (MIT),
 src/static/fonts/         Instrument Serif, Manrope, JetBrains Mono (OFL), incluse local
 tests/test_app.py         Teste API (acces cu două conturi, mesaje, puncte, upload, știri, limbi)
 tests/check_i18n.js       Verifică să nu lipsească nicio traducere
-render.yaml               Publicarea pe Render (un proces, disc permanent, fără chei)
+app.py + vercel.json      Publicarea pe Vercel (Root Directory: cutia-final), Cron pentru Byte
+.env.example              Variabilele de mediu, fără valori
+render.yaml               Alternativă: publicarea pe Render
 data/                     Date + fișiere încărcate (ignorat de git)
 ```
 
 ## Comenzi
 
 ```bash
-pip install -r requirements.txt
-cp .env.example .env              # pune cheia API aici, dacă ai una
+pip install -r requirements-dev.txt
+cp .env.example .env              # TRAINER_EMAILS, TRAINER_CODE (+ cheia API, dacă ai una)
 uvicorn src.app:app --reload      # http://localhost:8000
 pytest                            # rulează după fiecare schimbare
 ```
 
-## Publicare (Render)
+## Publicare (Vercel)
 
-- `render.yaml` descrie serverul: **un singur proces** uvicorn (datele stau în memorie, deci fără `--workers`), plan gratuit, datele și fișierele în Supabase (`SUPABASE_SECRET_KEY`), `--proxy-headers` ca linkurile din emailuri să iasă cu `https://`, verificare pe `/api/health`.
-- Orice salvare trece prin `save_db()` (care scrie în Supabase în fundal, doar colecțiile schimbate) și orice fișier prin `put_blob/get_blob/delete_blob`. Nu scrie direct pe disc.
+- Intrarea e `app.py` (din rădăcina `cutia-final`), care importă `src.app:app`. Pe Vercel, Root Directory = `cutia-final`.
+- **Supabase e obligatoriu pe Vercel** (`SUPABASE_URL` + `SUPABASE_SECRET_KEY`); fără el, `/api/` răspunde 503 cu un mesaj clar.
+- Orice salvare trece prin `save_db()` și orice fișier prin `put_blob/get_blob/delete_blob`. Nu scrie direct pe disc. Cu Supabase, `save_db()` nu scrie nimic: scrierea o face `commit()` la finalul cererii.
 - Dacă Supabase nu răspunde la pornire, `load_db()` oprește pornirea: niciodată nu pornim cu date goale peste date bune.
-- În `render.yaml` nu se scrie nicio cheie sau cod: doar `sync: false`, iar valorile se completează în Render.
-- `requirements.txt` are versiuni fixate. Când schimbi o versiune, rulează `pytest` într-un mediu curat.
-- `TRAINER_CODE` nu are valoare implicită; codurile din `WEAK_TRAINER_CODES` și cele sub 6 caractere sunt ignorate.
+- În `vercel.json` / `render.yaml` nu se scrie nicio cheie: valorile se completează în panoul gazdei.
+- `requirements.txt` are doar ce trebuie pe server, cu versiuni fixate; uneltele de test sunt în `requirements-dev.txt`.
+- `TRAINER_CODE` nu are valoare implicită; codurile din `WEAK_TRAINER_CODES` și cele sub 6 caractere sunt ignorate (fără cod, nu se poate face contul de trainer).
 
 ## Convenții
 

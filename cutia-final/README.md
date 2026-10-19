@@ -54,8 +54,7 @@ Aplicația finală a clasei combină cele mai bune idei din temele studenților:
 - **Recap-ul săptămânii (trainer):** pe Acasă, cifrele ultimelor 7 zile, subiectele, cine n-a mai intrat și, cu AI, un rezumat și ce merită reluat la ora următoare. La Claude ajung doar textele întrebărilor și răspunsurilor, niciodată nume.
 - **Întrebări frecvente:** trainerul publică răspunsuri (și din propunerile recap-ului); toată clasa le vede în Ghid.
 - **Aplicație pe telefon 📲:** se instalează pe ecranul principal (Android, iPhone, calculator), se deschide și fără internet (ultima versiune), cu **notificări push**: răspunsul trainerului, mesaje, feedback, idee aleasă, temă nouă, ora live, briefing-ul lui Byte. Notificările sunt în limba fiecăruia, fără conținut privat pe ecranul blocat.
-- **Conturi prin Supabase Auth** (recomandat): confirmare pe email la cont nou, „Ai uitat parola?” cu link pe email, „Continuă cu Google” și parole păstrate de Supabase, nu de noi. Serverul verifică la Supabase fiecare token înainte să te lase să intri.
-- **Fără Supabase:** conturi cu email + parolă (sau **Google**, dacă e configurat). Trainerul e recunoscut după email. Cod de clasă opțional, ca doar colegii tăi să-și poată face cont.
+- **Conturi cu email + parolă:** fiecare student își face singur contul („N-ai cont? Creează-ți unul”: nume, email, parolă) și intră direct ca student. Trainer e doar `stoichin.radu23@gmail.com` (`TRAINER_EMAILS`), cu codul de trainer la prima înscriere. Din **Puncte → 👥 Studenții clasei** trainerul poate face și el conturi, îi redenumește, le pune o parolă nouă sau le șterge contul.
 - **Numele tău, automat:** sesiunea rămâne activă (și după repornirea serverului). Aplicația te salută pe nume peste tot, iar la revenire îți spune „Bine ai revenit, Madalina!”.
 - **Mesaje directe** student ↔ trainer, cu mesaje necitite și notificări.
 - **Teme anunțate de trainer** cu termen, puncte și numărătoare inversă; **anunțuri** fixate pe pagina de acasă.
@@ -84,114 +83,90 @@ Aplicația finală a clasei combină cele mai bune idei din temele studenților:
 | --- | --- | --- | --- |
 | ![](docs/screenshots/ghid.png) | ![](docs/screenshots/cutia-perla.png) | ![](docs/screenshots/setari.png) | ![](docs/screenshots/robot-mobil.png) |
 
-## Încearcă aplicația direct pe GitHub (Codespaces)
+## Publică pe Vercel (linkul live)
 
-Fără să instalezi nimic: pe pagina repo-ului apasă **Code → Codespaces → Create codespace on main**. GitHub pornește un calculator în browser, instalează tot și deschide aplicația (portul 8000) într-un tab nou. Prima pornire durează 1–2 minute. Fără cheie API, aplicația merge complet, cu modul local pentru AI.
+Aplicația e gata pentru [Vercel](https://vercel.com): `app.py` (intrarea FastAPI), `vercel.json` (durata maximă și Cron-ul zilnic pentru Byte). Datele și fișierele stau în **Supabase** (pe Vercel nu există disc permanent).
 
-Ca să încerci și partea de trainer: în Codespace, în terminal, scrie `echo "TRAINER_EMAILS=emailul-tau@exemplu.ro" > .env`, oprește aplicația (Ctrl+C) și pornește-o din nou cu `uvicorn src.app:app --host 0.0.0.0 --port 8000`. Contul făcut cu acel email intră ca trainer.
+### 1. Supabase (baza de date, gratuit)
 
-Pentru un link permanent, pe care îl poate deschide oricine, vezi „Publică online” mai jos.
+1. Fă-ți cont pe [supabase.com](https://supabase.com) și creează un proiect (regiunea *Frankfurt*, aproape de România și de Vercel).
+2. **SQL Editor** → lipește tot conținutul din `supabase/schema.sql` → **Run**. Se creează tabelul `cutia_state` (Row Level Security fără politici: browserul nu poate citi nimic), funcțiile `cutia_sync` / `cutia_commit` și bucket-ul privat `cutia-files`. Poți rula fișierul din nou oricând.
+3. **Project Settings → API Keys**: copiază *Project URL* și cheia **secret** (`sb_secret_…`). Cheia secretă stă doar în Vercel, niciodată în cod sau pe GitHub.
 
-## Cum se pornește
+### 2. Vercel
 
-```bash
-pip install -r requirements.txt
-cp .env.example .env          # opțional: pune ANTHROPIC_API_KEY și TRAINER_CODE aici
-uvicorn src.app:app --reload
-```
+1. Fă-ți cont pe **vercel.com** cu GitHub → **Add New → Project** → alegi acest repo.
+2. **Root Directory: `cutia-final`** (important: aplicația e în acest folder). Framework: FastAPI (îl recunoaște singur).
+3. La **Environment Variables** pune:
 
-Deschide http://localhost:8000.
-
-- **Cum intri:** cu **emailul tău personal și o parolă** (minim 8 caractere). Prima dată alegi „Cont nou”. Dacă serverul are `GOOGLE_CLIENT_ID`, apare și butonul **„Continuă cu Google”**.
-- **Trainerul:** emailul lui e în `TRAINER_EMAILS`, așa că intră direct ca trainer. Alternativ, își face cont cu codul de trainer (`TRAINER_CODE`).
-- **Doar clasa ta:** dacă setezi `CLASS_CODE`, un student își poate face cont doar cu codul clasei, primit de la trainer.
-- **Ai uitat parola?** Cu Supabase: „Ai uitat parola? Primești un link pe email.” (sau trainerul îți trimite linkul din Puncte). Fără Supabase: trainerul îți generează o parolă temporară, iar tu o schimbi din Setări.
-- **Fără cheie API** aplicația merge complet: propunerile se retușează local, la întrebări apar sfaturi din ghid, iar știrile sunt filtrate automat (fără explicațiile lui Claude).
-- **AI News** are nevoie de acces la internet pe server, ca să citească sursele.
-
-| Variabilă | Implicit | Rol |
+| Variabilă | Obligatoriu | Ce pui |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | – | Activează AI-ul (doar pe server). |
-| `TRAINER_EMAILS` | – | Emailurile trainerilor, separate prin virgulă. |
-| `TRAINER_CODE` | – | Codul cu care un trainer își poate face cont (minim 6 caractere). Codurile știute de toți, ca `trainer` sau `schimba-ma`, sunt ignorate. |
-| `CLASS_CODE` | – | Dacă e setat, studenții au nevoie de el ca să-și facă cont. |
-| `SUPABASE_URL` | – | Adresa proiectului Supabase (`https://xxxx.supabase.co`). Împreună cu cheia de mai jos, pornește conturile prin Supabase. |
-| `SUPABASE_ANON_KEY` | – | Cheia **anon / publishable** a proiectului. Niciodată `service_role`. |
-| `SUPABASE_SECRET_KEY` | – | Doar pe server: datele și fișierele aplicației în Supabase (vezi mai jos). |
-| `GOOGLE_CLIENT_ID` | – | Fără Supabase: activează „Continuă cu Google” (Client ID din Google Cloud Console). |
-| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | – | Notificările push. Le generezi o dată cu `python -m src.webpush`. |
-| `GITHUB_TOKEN` | – | Opțional, pentru „Verifică repo-ul”: un token doar de citire ridică limita GitHub de la 60 la 5000 de cereri pe oră. |
-| `CUTIA_AI` | `auto` | `auto` / `on` / `off` |
-| `CUTIA_REFINE_PER_DAY` | `20` | Câte retușări cu Claude are un student pe zi. |
-| `CUTIA_DEMO` | `0` | `1` = conturi și date fictive pentru prezentare. Doar fără Supabase și doar pe o bază goală. Nu-l porni pe aplicația live. |
-| `CUTIA_MODEL` | `claude-opus-5-5` | Modelul Claude. |
-| `CUTIA_DATA` | `data/cutia.json` | Unde se salvează datele. |
-| `CUTIA_UPLOADS` | `data/uploads` | Unde se salvează fișierele încărcate. |
-| `CUTIA_NEWS_FEEDS` | sursele de mai sus | Alte surse: `Nume\|https://...,Nume\|https://...` |
-| `CUTIA_DIGEST_HOUR` | `7` | Ora la care Byte face briefing-ul zilei. |
-| `CUTIA_TZ` | `Europe/Bucharest` | Fusul orar pentru ora de mai sus. |
-| `CUTIA_DIGEST_LANGS` | `ro,en` | Limbile scrise dimineața; celelalte se scriu la prima vizită și rămân salvate. |
-| `CUTIA_DIGEST` | `on` | `off` oprește robotul (briefing-ul se face doar la cerere). |
-| `CUTIA_NEWS_CACHE` | `7200` | Cât timp (secunde) păstrăm știrile înainte să le recitim. |
+| `TRAINER_EMAILS` | da | Emailul tău (sau mai multe, separate prin virgulă). |
+| `TRAINER_CODE` | da | Un cod secret de minim 6 caractere. Îl folosești o dată, când îți faci contul de trainer. |
+| `SUPABASE_URL` | da | *Project URL* din Supabase. |
+| `SUPABASE_SECRET_KEY` | da | Cheia `sb_secret_…` din Supabase. |
+| `CRON_SECRET` | da | Un șir lung, aleatoriu. Vercel îl trimite la Cron, ca nimeni altcineva să nu pornească briefing-ul. |
+| `ANTHROPIC_API_KEY` | nu | Activează AI-ul. Fără ea aplicația merge în modul local. |
+| `SESSION_SECRET` | nu | Cheia cu care se semnează sesiunile. Implicit e derivată din cheia Supabase. |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` | nu | Notificări push (`python -m src.webpush` le generează). |
+| `GITHUB_TOKEN` | nu | Token doar de citire pentru „Verifică repo-ul” (limita GitHub urcă de la 60 la 5000 de cereri pe oră). |
 
-### Conturi prin Supabase (pas cu pas)
-
-1. Fă-ți cont gratuit pe [supabase.com](https://supabase.com) și creează un proiect nou.
-2. **Project Settings → API**: copiază *Project URL* în `SUPABASE_URL` și cheia *anon public* în `SUPABASE_ANON_KEY` (în `.env` sau la serverul de hosting).
-3. **Authentication → Sign In / Providers → Email**: lasă **Confirm email** pornit. Doar așa știm că emailul chiar e al tău (altfel oricine s-ar putea înscrie cu emailul trainerului).
-4. **Authentication → URL Configuration**: pune la *Site URL* adresa aplicației (de exemplu `http://localhost:8000/static/index.html`, apoi linkul live) și adaug-o și la *Redirect URLs*. Acolo te întorc linkurile din email.
-5. (opțional) **Google**: în *Sign In / Providers → Google* pui Client ID și Secret din Google Cloud Console; butonul „Continuă cu Google” apare singur.
-6. Repornește serverul. Pe pagina de intrare apare „🔐 conturi securizate prin Supabase”.
-
-### Toate datele în Supabase (recomandat pentru publicare)
-
-Pe lângă conturi, Supabase poate păstra **toate datele** (întrebări, teme, idei, mesaje, puncte) și **fișierele** (teme, capturi). Așa serverul poate fi repornit oricând fără să se piardă nimic, iar Render merge pe planul gratuit.
-
-1. În Supabase → **SQL Editor**, lipește conținutul fișierului `supabase/schema.sql` și apasă **Run**. Se creează tabelul `cutia_state` (cu Row Level Security pornit și fără politici: browserul nu poate citi nimic din el) și bucket-ul privat `cutia-files`.
-2. **Project Settings → API Keys**: copiază cheia **secret** (`sb_secret_…`) în `SUPABASE_SECRET_KEY`. Ea stă **doar pe server** (`.env` sau Render → Environment), niciodată în cod, în browser sau pe GitHub.
-3. Repornește serverul. La prima pornire, dacă tabelul e gol și ai date în `data/cutia.json`, se mută singure. Pentru fișierele vechi: `python -m src.store migrate`.
-4. `GET /api/health` arată `"storage": "supabase"`.
-
-Fără `SUPABASE_SECRET_KEY`, datele rămân în `data/cutia.json`, ca până acum.
-
-**Teste:** `pytest` (acces cu două conturi, mesaje private, puncte, upload, știri, AI și toate cele 6 limbi).
-
-## Publică online (linkul live)
-
-Aplicația e pregătită pentru [Render](https://render.com) prin fișierul `render.yaml`.
-
-1. Fă-ți cont pe **render.com** cu contul de GitHub.
-2. **New → Blueprint**, alegi acest repo și apeși **Apply**.
-3. Render îți cere valorile secrete; le completezi doar acolo, niciodată în cod:
-   - `ANTHROPIC_API_KEY`: cheia ta API (opțional);
-   - `TRAINER_EMAILS`: emailul trainerului;
-   - `TRAINER_CODE`: un cod al tău de minim 6 caractere (opțional);
-   - `CLASS_CODE`: codul clasei (opțional);
-   - `SUPABASE_URL`, `SUPABASE_ANON_KEY` și `SUPABASE_SECRET_KEY`: din pașii de mai sus;
-   - `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`: pentru notificări (opțional).
-4. După 2–3 minute primești linkul, de forma `https://cutia-clasei-xxxx.onrender.com`.
-5. Cu Supabase: pune linkul + `/static/index.html` la *Site URL* și *Redirect URLs* (Authentication → URL Configuration).
-6. Scrie linkul mai jos, la „Aplicația live”.
+4. **Deploy**. După ~1 minut primești linkul (`https://cutia-clasei-….vercel.app`).
+5. Deschide linkul: prima dată apare **„Contul de trainer”**. Scrii numele, emailul din `TRAINER_EMAILS`, o parolă și `TRAINER_CODE`. Gata, ești trainer.
+6. **Puncte → 👥 Studenții clasei**: adaugi fiecare student (utilizator, nume afișat, parolă generată) și îi trimiți datele de intrare cu butonul **Copiază**.
 
 De aici, fiecare `git push` publică automat versiunea nouă.
 
-**Cost: 0.** Datele și fișierele stau în Supabase, deci Render merge pe planul **Free**. Pe planul gratuit, serverul „adoarme” după 15 minute fără vizite și se trezește în ~1 minut la prima vizită; datele nu se pierd (se scriu în Supabase la fiecare schimbare și la oprire). Briefing-ul lui Byte se face la prima vizită de după ora 7. Proiectele Supabase gratuite se pun pe pauză după o săptămână fără activitate; le repornești din panoul Supabase.
+**Ce e diferit pe Vercel:**
+- Serverul rulează în mai multe copii în același timp. Fiecare cerere citește din Supabase doar ce s-a schimbat și scrie doar ce a schimbat ea; dacă două copii scriu deodată, a doua își reia cererea pe datele noi, deci nu se pierde nimic.
+- **Byte** (briefing-ul zilei) îl pornește Vercel Cron o dată pe zi (`vercel.json`, în jur de 08:15 vara / 07:15 iarna, ora României). Trainerul îl poate face oricând din AI News.
+- O cerere are maxim ~4,5 MB, deci **o predare are cel mult 4 MB de fișiere** în total (aplicația spune asta înainte de încărcare).
+- **Cost: 0** pe planurile gratuite Vercel (Hobby) și Supabase. Proiectele Supabase gratuite se pun pe pauză după o săptămână fără activitate; le repornești din panoul Supabase.
 
-**Aplicația live:** încă nu e publicată online. Linkul apare aici după deploy.
+## Cum se pornește local
+
+```bash
+pip install -r requirements-dev.txt
+cp .env.example .env          # pune TRAINER_EMAILS și TRAINER_CODE (și, opțional, cheia API)
+uvicorn src.app:app --reload
+```
+
+Deschide http://localhost:8000. Fără `SUPABASE_*`, datele se salvează local în `data/cutia.json`. Cu `SUPABASE_*` în `.env`, local folosești aceeași bază de date ca pe Vercel.
+
+- **Trainerul:** prima dată, „Contul de trainer” (email din `TRAINER_EMAILS` + parolă + `TRAINER_CODE`). Apoi intră cu emailul și parola.
+- **Studenții:** își fac cont cu **emailul și o parolă**, apoi intră cu ele. Parola o pot schimba din Setări.
+- **Ai uitat parola?** Trainerul îți pune una nouă din Puncte (🔑 Parolă nouă sau 🔑 Parolă temporară).
+- **Fără cheie API** aplicația merge complet: propunerile se retușează local, la întrebări apar sfaturi din ghid, iar știrile sunt filtrate automat.
+
+| Variabilă (în plus față de cele de mai sus) | Implicit | Rol |
+| --- | --- | --- |
+| `CUTIA_AI` | `auto` | `auto` / `on` / `off` |
+| `CUTIA_REFINE_PER_DAY` | `20` | Câte retușări cu Claude are un student pe zi. |
+| `CUTIA_DEMO` | `0` | `1` = conturi și date fictive pentru prezentare. Doar fără Supabase și doar pe o bază goală. |
+| `CUTIA_MODEL` | `claude-sonnet-5-5` | Modelul Claude. |
+| `CUTIA_DATA` / `CUTIA_UPLOADS` | `data/…` | Unde se salvează datele local, fără Supabase. |
+| `CUTIA_NEWS_FEEDS` | sursele de mai sus | Alte surse: `Nume\|https://...,Nume\|https://...` |
+| `CUTIA_DIGEST_HOUR` / `CUTIA_TZ` | `7` / `Europe/Bucharest` | Ora briefing-ului lui Byte. |
+| `CUTIA_DIGEST_LANGS` | `ro,en` | Limbile scrise dimineața; celelalte la prima vizită. |
+| `CUTIA_DIGEST` | `on` | `off` oprește robotul. |
+| `CUTIA_NEWS_CACHE` | `7200` | Cât timp (secunde) păstrăm știrile. |
+
+Ai deja date în `data/cutia.json`? `python -m src.store migrate` le mută în Supabase.
+
+**Teste:** `pytest` (acces cu două conturi, conturi făcute de trainer, sincronizarea cu Supabase între mai multe servere, mesaje, puncte, upload, știri, AI și toate cele 6 limbi).
 
 ## Securitate
 
 - Cheia API stă doar pe server (variabilă de mediu / `.env`, ignorat de git) și nu ajunge niciodată în browser. Un test verifică asta.
 - Toate regulile de acces se verifică pe server și sunt testate cu două conturi: studentul B nu vede întrebările, temele, fișierele sau mesajele studentului A.
-- Sesiunile se salvează doar ca hash, iar parolele ca hash PBKDF2. „Ieși” închide sesiunea pe server.
-- După 5 parole greșite, contul se blochează 10 minute. Același mesaj pentru email greșit și parolă greșită, ca să nu se poată afla cine are cont.
-- Supabase: parolele stau la Supabase, nu la noi. Orice token venit din browser (linkul din email, Google) e verificat de server la Supabase înainte de a deschide o sesiune, iar din bara de adrese e șters imediat. Pe server stă doar anon key, niciodată `service_role`. Emailul din `TRAINER_EMAILS` dă rol de trainer doar dacă emailul e dovedit (confirmare pe email sau Google).
+- Parolele se salvează doar ca hash PBKDF2. Sesiunile sunt tokenuri semnate de server (HMAC); „Ieși” închide tokenul pe server, iar o parolă nouă închide toate sesiunile contului.
+- Nu există cont nou public: contul de trainer cere `TRAINER_CODE` (și un email din `TRAINER_EMAILS`), iar conturile studenților le face doar trainerul.
+- După 5 parole greșite, contul se blochează 10 minute. Același mesaj pentru utilizator greșit și parolă greșită, ca să nu se poată afla cine are cont.
 - Datele în Supabase: tabelul are Row Level Security fără nicio politică, deci cheia publică nu poate citi nimic; serverul folosește cheia secretă, ținută doar în variabilele lui de mediu. Dacă Supabase nu răspunde la pornire, serverul nu pornește (nu riscăm să suprascriem datele cu nimic).
 - „Verifică repo-ul” vorbește doar cu `api.github.com` și `raw.githubusercontent.com`, cu owner/repo validate strict; cheile găsite se arată mascate.
 - Error Doctor și Prompt Lab ascund cheile API din text înainte să-l salveze sau să-l trimită la Claude.
 - Notificările push sunt criptate pentru fiecare dispozitiv (RFC 8291) și semnate cu cheia serverului (VAPID); textul lor e generic.
 - Capturile (Error Doctor, Demo Day) se acceptă doar ca PNG/JPEG/WebP verificate după conținut și se servesc cu `nosniff`, doar celor logați.
-- Google: tokenul semnat de Google se verifică pe server (cu biblioteca oficială `google-auth`), doar pentru emailuri verificate.
 - Punctele se calculează pe server din activitatea reală, nu pot fi modificate din browser; nu îți poți vota propria idee.
 - Fișierele se salvează cu nume aleatorii și se descarcă doar ca atașament, după verificarea accesului.
 - Codul de trainer nu are valoare implicită: codurile știute de toți (din README sau `.env.example`) sunt ignorate, ca nimeni să nu devină trainer cu ele.
@@ -208,8 +183,9 @@ De aici, fiecare `git push` publică automat versiunea nouă.
 - **Aplicația trebuie să meargă și fără AI** → mod local pentru retușare, sfaturi din ghid și filtru automat de știri.
 - **AI-ul nu decide în locul studentului** → răspuns structurat (JSON), maxim 3 întrebări, trimitere doar cu aprobare verificată pe server.
 - **Clasa e internațională** → toate textele în `src/static/i18n/<limbă>.js`; se încarcă doar limba aleasă; un test verifică să nu lipsească nicio traducere.
-- **Parolele și emailurile de resetare sunt greu de făcut bine singur** → Supabase Auth (opțional), apelat de pe server prin API-ul REST, fără supabase-js (fără build, fără dependențe noi).
-- **Simplu de rulat la curs** → FastAPI + HTML/CSS/JS fără build; datele într-un fișier JSON.
+- **Clasa e mică și trainerul știe cine e în ea** → conturile le face trainerul (utilizator + parolă), fără înscriere publică și fără emailuri pentru studenți.
+- **Vercel rulează mai multe copii ale serverului, fără disc** → datele în Supabase, cu versiune pe fiecare colecție: fiecare cerere citește doar ce s-a schimbat și scrie „totul sau nimic”; la conflict, cererea se reia. Sesiunile sunt tokenuri semnate, ca intrarea să nu scrie în baza de date.
+- **Simplu de rulat la curs** → FastAPI + HTML/CSS/JS fără build; local, datele într-un fișier JSON.
 - **Robotul 3D trebuie să meargă oriunde, fără CDN** → Three.js și fonturile sunt incluse local (`src/static/vendor/`, `src/static/fonts/`); fără WebGL sau cu animațiile oprite, intri direct în aplicație.
 - **Design elegant, nu încărcat** → puține culori (lavandă, cer, roz, piersică), mult spațiu, fără strălucire neon; serif pentru titluri, sans pentru text.
 
@@ -227,7 +203,6 @@ src/store.py             Datele și fișierele în Supabase (Postgres + Storage)
 src/webpush.py           Notificări push (RFC 8291 + VAPID)
 src/static/sw.js         Service worker: aplicația instalabilă, offline, notificări
 supabase/schema.sql      Tabelul și bucket-ul din Supabase (rulat o dată)
-src/supa.py              Conturi prin Supabase Auth (opțional): verificare token, resetare parolă
 src/static/              Interfața: index.html, app.js, styles.css
 src/static/i18n/         Textele în 6 limbi (ro, en, fr, it, es, de)
 src/static/intro.js      Robotul 3D de bun venit (Three.js)
@@ -235,5 +210,7 @@ src/static/vendor/       Three.js (licență MIT), inclus local
 src/static/fonts/        Fonturile (SIL Open Font License), incluse local
 tests/                   Teste (pytest) + verificarea traducerilor
 CLAUDE.md                Regulile proiectului pentru Claude
-render.yaml              Publicarea pe Render (disc permanent pentru date, fără chei în fișier)
+app.py + vercel.json     Publicarea pe Vercel (intrarea FastAPI, durata maximă, Cron pentru Byte)
+.env.example             Variabilele de mediu (fără valori)
+render.yaml              Alternativă: publicarea pe Render
 ```

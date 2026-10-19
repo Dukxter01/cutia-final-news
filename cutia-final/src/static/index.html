@@ -80,29 +80,19 @@
     <form id="login-form" class="card glass login" novalidate>
       <h2 id="login-title" data-i18n="login.title"></h2>
       <p id="not-you" class="muted small hidden"><button type="button" class="link-btn" id="not-you-btn"></button></p>
-      <div class="auth-tabs" role="tablist">
-        <button type="button" role="tab" data-auth="in" class="on" data-i18n="login.tabIn"></button>
-        <button type="button" role="tab" data-auth="up" data-i18n="login.tabUp"></button>
-      </div>
+      <p id="setup-lead" class="muted small hidden" data-i18n="login.setupLead"></p>
       <label id="name-field" class="hidden"><span data-i18n="login.name"></span>
         <input id="login-name" maxlength="60" autocomplete="name" data-i18n-placeholder="login.namePh">
       </label>
-      <label id="email-field"><span data-i18n="login.email"></span>
-        <input id="login-email" type="email" maxlength="200" autocomplete="email" required data-i18n-placeholder="login.emailPh">
+      <label id="email-field"><span id="login-label" data-i18n="login.login"></span>
+        <input id="login-email" maxlength="200" autocomplete="username" autocapitalize="none" spellcheck="false" required data-i18n-placeholder="login.loginPh">
       </label>
       <label id="password-field"><span data-i18n="login.password"></span>
         <input id="login-password" type="password" maxlength="200" autocomplete="current-password" required>
       </label>
-      <label id="class-field" class="hidden"><span data-i18n="login.classCode"></span>
-        <input id="login-class" maxlength="100" autocomplete="off" data-i18n-placeholder="login.classCodePh">
+      <label id="trainer-field" class="hidden"><span data-i18n="login.code"></span>
+        <input id="login-code" type="password" maxlength="100" autocomplete="off" data-i18n-placeholder="login.codePh">
       </label>
-      <details id="trainer-field" class="trainer-toggle hidden">
-        <summary data-i18n="login.amTrainer"></summary>
-        <label><span data-i18n="login.code"></span>
-          <input id="login-code" type="password" maxlength="100" autocomplete="off" data-i18n-placeholder="login.codePh">
-        </label>
-        <span class="hint" data-i18n="login.trainerHint"></span>
-      </details>
       <span id="auth-hint" class="hint"></span>
       <button type="submit" class="primary big"><span id="auth-submit"></span> <span class="kbd">↵</span></button>
       <p id="login-error" class="error" role="alert"></p>
@@ -112,14 +102,8 @@
         <p id="demo-lead" class="small muted"></p>
         <div id="demo-accounts" class="row"></div>
       </div>
-      <div id="google-wrap" class="hidden">
-        <div class="divider" data-i18n="login.or"></div>
-        <div id="google-btn"></div>
-        <button type="button" id="supa-google" class="ghost big google-btn hidden"><span class="g-mark" aria-hidden="true">G</span> <span data-i18n="login.google"></span></button>
-      </div>
       <p class="forgot" id="forgot" data-i18n="login.forgot"></p>
-      <p class="forgot hidden" id="forgot-supa"><button type="button" class="link-btn" id="forgot-btn" data-i18n="login.forgotLink"></button></p>
-      <p class="secured mono hidden" id="secured-by" data-i18n="login.securedBy"></p>
+      <p class="forgot hidden" id="setup-switch"><button type="button" class="link-btn" id="setup-btn"></button></p>
     </form>
   </main>
 
@@ -564,6 +548,23 @@
           <p class="muted" id="pt-lead"></p>
         </div>
         <div id="my-points" class="student-only"></div>
+        <section id="students-card" class="card composer trainer-only">
+          <div class="composer-head"><h2 data-i18n="st.title"></h2></div>
+          <p class="muted small" data-i18n="st.lead"></p>
+          <form id="student-form" autocomplete="off">
+            <div class="row three">
+              <label><span data-i18n="st.username"></span><input id="st-username" maxlength="32" autocapitalize="none" spellcheck="false" required data-i18n-placeholder="st.usernamePh"></label>
+              <label><span data-i18n="st.name"></span><input id="st-name" maxlength="60" required data-i18n-placeholder="st.namePh"></label>
+              <label><span data-i18n="st.password"></span><input id="st-password" maxlength="200" required class="mono" autocomplete="new-password"></label>
+            </div>
+            <div class="row end">
+              <button type="button" id="st-generate" class="small ghost" data-i18n="st.generate"></button>
+              <button type="submit" class="primary glow" data-i18n="st.add"></button>
+            </div>
+          </form>
+          <div id="st-created" class="hidden"></div>
+          <div id="student-list" class="student-list"></div>
+        </section>
         <form id="bonus-form" class="card composer trainer-only">
           <div class="composer-head"><h2 data-i18n="pt.bonusTitle"></h2></div>
           <div class="row three">

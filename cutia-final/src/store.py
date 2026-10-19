@@ -1,28 +1,28 @@
 """
-Datele aplicației în Supabase (opțional): Postgres pentru date, Storage pentru fișiere.
+Datele aplicației în Supabase: Postgres pentru date, Storage pentru fișiere.
 
-Cum funcționează:
-- aplicația lucrează în continuare cu `db` în memorie (rapid și simplu);
+Cum funcționează (merge și pe Vercel, unde rulează mai multe copii ale serverului):
+- aplicația lucrează cu `db` în memorie (rapid și simplu);
 - fiecare colecție (questions, submissions, proposals, …) e un rând în tabelul
-  `cutia_state`; după fiecare schimbare scriem în fundal DOAR colecțiile
-  schimbate (în ~1 secundă), iar la oprirea serverului scriem tot ce a rămas;
+  `cutia_state`, cu un număr de versiune;
+- la începutul fiecărei cereri luăm din Supabase DOAR colecțiile care s-au
+  schimbat (`cutia_sync`), iar la final scriem DOAR ce am schimbat noi
+  (`cutia_commit`), cu versiunea pe care am citit-o. Dacă altă copie a scris
+  între timp, Supabase refuză, iar app.py reia cererea pe datele noi.
+  Așa nu se pierde nimic, chiar dacă doi studenți scriu în același timp.
 - fișierele încărcate stau în bucket-ul privat `cutia-files`.
 
-Securitate: tabelul are Row Level Security pornit și NICIO politică, deci cheia
-publică (anon) din browser nu poate citi nimic. Serverul folosește cheia secretă
-(`SUPABASE_SECRET_KEY`), care stă doar în variabilele de mediu ale serverului,
-niciodată în browser sau pe GitHub. Accesul la date îl verifică tot app.py.
+Securitate: tabelul are Row Level Security pornit și NICIO politică, iar funcțiile
+se pot rula doar cu cheia secretă. Serverul folosește `SUPABASE_SECRET_KEY`, care
+stă doar în variabilele de mediu ale serverului, niciodată în browser sau pe GitHub.
 
 Pornire: rulează o dată `supabase/schema.sql` în Supabase → SQL Editor.
 Mutarea datelor existente:  python -m src.store migrate
 """
 
-import hashlib
 import json
 import os
 import sys
-import threading
-import time
 from pathlib import Path
 from typing import Optional
 
@@ -31,7 +31,6 @@ import httpx
 TABLE = "cutia_state"
 BUCKET = "cutia-files"
 TIMEOUT = 15.0
-FLUSH_EVERY = 1.0
 _transport: Optional[httpx.BaseTransport] = None  # testele pun aici un Supabase fals
 
 
@@ -60,79 +59,49 @@ def _headers(extra: Optional[dict] = None) -> dict:
     return headers
 
 
+_client: Optional[httpx.Client] = None
+
+
+def _http() -> httpx.Client:
+    # O singură conexiune refolosită: pe Vercel fiecare cerere vorbește cu Supabase de 1-2 ori
+    global _client
+    if _client is None or _transport is not None:
+        _client = httpx.Client(timeout=TIMEOUT, transport=_transport)
+    return _client
+
+
 def _request(method: str, path: str, **kwargs) -> httpx.Response:
     try:
-        with httpx.Client(timeout=TIMEOUT, transport=_transport) as client:
-            return client.request(method, url() + path, **kwargs)
+        return _http().request(method, url() + path, **kwargs)
     except httpx.HTTPError as exc:
         raise StoreError(type(exc).__name__)
 
 
+def _rpc(name: str, payload: dict):
+    res = _request("POST", f"/rest/v1/rpc/{name}", json=payload,
+                   headers=_headers({"Content-Type": "application/json"}))
+    if res.status_code != 200:
+        raise StoreError(f"{name} {res.status_code}: {res.text[:200]}")
+    return res.json()
+
+
 # ---------------------------------------------------------------- date (Postgres prin PostgREST)
 
+def sync(known: dict) -> list:
+    """Versiunea fiecărei colecții + datele doar pentru cele care diferă de `known`.
+    Întoarce [{name, version, changed, data}]. Ridică StoreError dacă Supabase nu răspunde."""
+    return _rpc("cutia_sync", {"known": known})
+
+
+def commit(changes: list) -> dict:
+    """Scrie colecțiile schimbate, doar dacă versiunile din Supabase sunt cele citite de noi.
+    changes = [{name, version, data}] → {"ok": true, "versions": {...}} sau {"ok": false, "conflict": [...]}."""
+    return _rpc("cutia_commit", {"changes": changes})
+
+
 def load() -> dict:
-    """Toate colecțiile. Ridică StoreError dacă Supabase nu răspunde (nu pornim cu date goale)."""
-    res = _request("GET", f"/rest/v1/{TABLE}?select=name,data", headers=_headers())
-    if res.status_code != 200:
-        raise StoreError(f"load {res.status_code}: {res.text[:200]}")
-    return {row["name"]: row["data"] for row in res.json()}
-
-
-def save(collections: dict):
-    """Scrie (upsert) colecțiile primite, câte un rând fiecare."""
-    rows = [{"name": k, "data": v, "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())} for k, v in collections.items()]
-    res = _request("POST", f"/rest/v1/{TABLE}?on_conflict=name", json=rows,
-                   headers=_headers({"Prefer": "resolution=merge-duplicates,return=minimal", "Content-Type": "application/json"}))
-    if res.status_code >= 300:
-        raise StoreError(f"save {res.status_code}: {res.text[:200]}")
-
-
-class Writer:
-    """Scrie în fundal doar colecțiile care s-au schimbat de la ultima scriere."""
-
-    def __init__(self, db: dict, lock):
-        self.db, self.lock = db, lock
-        self.hashes: dict = {}
-        self.dirty = threading.Event()
-        self.thread: Optional[threading.Thread] = None
-        self.last_error: Optional[str] = None
-
-    def remember(self):
-        """După încărcare: ce e deja în Supabase nu trebuie rescris."""
-        with self.lock:
-            self.hashes = {k: self._hash(v) for k, v in self.db.items()}
-
-    @staticmethod
-    def _hash(value) -> str:
-        return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
-
-    def mark(self):
-        self.dirty.set()
-        if self.thread is None or not self.thread.is_alive():
-            self.thread = threading.Thread(target=self._loop, daemon=True)
-            self.thread.start()
-
-    def _loop(self):
-        while True:
-            self.dirty.wait()
-            time.sleep(FLUSH_EVERY)  # adunăm schimbările dintr-o secundă într-o singură scriere
-            self.flush()
-
-    def flush(self):
-        self.dirty.clear()
-        with self.lock:  # copiem sub lacăt, trimitem fără lacăt
-            snapshot = {k: json.loads(json.dumps(v, default=str)) for k, v in self.db.items()}
-        changed = {k: v for k, v in snapshot.items() if self.hashes.get(k) != self._hash(v)}
-        if not changed:
-            return
-        try:
-            save(changed)
-            self.hashes.update({k: self._hash(v) for k, v in changed.items()})
-            self.last_error = None
-        except StoreError as err:
-            self.last_error = str(err)
-            self.dirty.set()  # reîncercăm la tura următoare
-            time.sleep(5)
+    """Toate colecțiile (folosit la mutarea datelor)."""
+    return {row["name"]: row["data"] for row in sync({})}
 
 
 # ---------------------------------------------------------------- fișiere (Storage, bucket privat)
@@ -162,12 +131,15 @@ def delete_file(name: str):
 def migrate(data_file: Path, upload_dir: Path):
     if not enabled():
         sys.exit("Setează întâi SUPABASE_URL și SUPABASE_SECRET_KEY (în .env).")
-    existing = load()
-    if existing.get("users"):
+    existing = sync({})
+    if any(row["name"] == "users" and row["data"] for row in existing):
         sys.exit("În Supabase există deja date. Nu le suprascriu.")
+    versions = {row["name"]: row["version"] for row in existing}
     data = json.loads(data_file.read_text(encoding="utf-8")) if data_file.exists() else {}
     if data:
-        save(data)
+        res = commit([{"name": k, "version": versions.get(k, 0), "data": v} for k, v in data.items()])
+        if not res.get("ok"):
+            sys.exit(f"Nu am putut scrie: {res}")
         print(f"✓ Date mutate: {', '.join(f'{k} ({len(v)})' for k, v in data.items() if isinstance(v, (list, dict)))}")
     files = [p for p in upload_dir.glob("*") if p.is_file()] if upload_dir.exists() else []
     for p in files:

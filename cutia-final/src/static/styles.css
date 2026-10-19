@@ -1365,3 +1365,17 @@ body.proj-open { overflow: hidden; }
 /* Mod demo pe pagina de intrare */
 .demo-box { border: 1px dashed var(--border-strong); border-radius: 14px; padding: .8rem 1rem; display: grid; gap: .4rem; }
 .demo-box .row { flex-wrap: wrap; gap: .4rem; }
+
+/* Studenții clasei (trainer): conturile făcute de trainer */
+#students-card { margin-bottom: 1rem; }
+.st-created { border: 1px dashed var(--border-strong); border-radius: 14px; padding: .8rem 1rem; margin-top: .8rem; display: grid; gap: .5rem; }
+.st-created pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+.student-list { display: grid; gap: .35rem; margin-top: 1rem; }
+.student-row { display: grid; grid-template-columns: auto 1fr auto; gap: .65rem; align-items: center; padding: .5rem .6rem; border-radius: 10px; border: 1px solid var(--border); }
+.student-row .who { display: grid; min-width: 0; }
+.student-row .who b, .student-row .who small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.student-row .acts { display: flex; gap: .35rem; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 640px) {
+  .student-row { grid-template-columns: auto 1fr; }
+  .student-row .acts { grid-column: 1 / -1; justify-content: flex-start; }
+}

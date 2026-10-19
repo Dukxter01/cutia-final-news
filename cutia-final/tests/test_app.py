@@ -5,10 +5,15 @@ os.environ["CUTIA_PERSIST"] = "0"
 os.environ["CUTIA_AI"] = "off"
 os.environ["TRAINER_CODE"] = "cod-trainer-test"
 os.environ["TRAINER_EMAILS"] = "radu@test.ro"
-os.environ.pop("CLASS_CODE", None)
-os.environ.pop("GOOGLE_CLIENT_ID", None)
+os.environ.pop("SUPABASE_URL", None)
+os.environ.pop("SUPABASE_SECRET_KEY", None)
+os.environ.pop("VERCEL", None)
 os.environ["CUTIA_UPLOADS"] = tempfile.mkdtemp()
 
+import base64
+import json as _json
+
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -20,98 +25,196 @@ client = TestClient(app_module.app)
 @pytest.fixture(autouse=True)
 def reset_db():
     app_module.db.update({
-        "users": {}, "sessions": {}, "prefs": {}, "drafts": [], "questions": [], "proposals": [], "submissions": [],
+        "users": {}, "revoked": {}, "prefs": {}, "drafts": [], "questions": [], "proposals": [], "submissions": [],
         "messages": [], "assignments": [], "announcements": [], "bonuses": [], "next_id": 1,
         "doctor": [], "hall": [], "live": None, "live_history": [], "showcase": [], "faq": [], "challenges": {}, "push": {}, "kickstarts": {}, "lab_log": {}, "recaps": {}, "digests": [], "refine_log": {},
     })
     app_module._failed.clear()
     app_module._cooldowns.clear()
+    app_module._remote.update(versions={}, hashes={})
 
 
-def email_for(name):
-    return f"{name.lower().replace(' ', '.')}@test.ro"
+TRAINER = {"name": "Radu", "email": "radu@test.ro", "password": "parola-test", "trainer_code": "cod-trainer-test"}
 
 
-def login(name, role="student", code=None, password="parola-test"):
-    """Creează contul la prima folosire (Radu = trainer, din TRAINER_EMAILS), apoi intră."""
-    email = email_for(name)
-    if email not in app_module.db["users"]:
-        r = client.post("/api/register", json={"name": name, "email": email, "password": password})
-    else:
-        r = client.post("/api/login", json={"email": email, "password": password})
+def auth(r):
     assert r.status_code in (200, 201), r.text
-    assert r.json()["role"] == role
     return {"Authorization": f"Bearer {r.json()['token']}"}
 
 
-def test_trainer_is_recognized_by_email_or_code():
-    assert login("Radu", "trainer") is not None
-    r = client.post("/api/register", json={"name": "T", "email": "t@x.ro", "password": "parola-buna", "trainer_code": "gresit"})
-    assert r.status_code == 403
-    r = client.post("/api/register", json={"name": "T", "email": "t@x.ro", "password": "parola-buna", "trainer_code": "cod-trainer-test"})
-    assert r.json()["role"] == "trainer"
-    r = client.post("/api/register", json={"name": "S", "email": "s@x.ro", "password": "parola-buna"})
-    assert r.json()["role"] == "student"
+def trainer_headers():
+    if "radu@test.ro" not in app_module.db["users"]:
+        return auth(client.post("/api/setup", json=TRAINER))
+    return auth(client.post("/api/login", json={"login": "radu@test.ro", "password": "parola-test"}))
 
 
-def test_register_validation_and_duplicates():
-    base = {"name": "Ana", "email": "ana@test.ro", "password": "parola-buna"}
-    assert client.post("/api/register", json={**base, "email": "nu-e-email"}).status_code == 400
-    assert client.post("/api/register", json={**base, "password": "scurta"}).status_code == 400
-    assert client.post("/api/register", json=base).status_code == 201
-    assert client.post("/api/register", json={**base, "email": "ANA@test.ro "}).status_code == 409
-    assert client.post("/api/login", json={"email": "Ana@Test.ro", "password": "parola-buna"}).status_code == 200
+def login(name, role="student", password="parola-test"):
+    """Radu = trainerul (email + parolă). Studenții: contul îl face trainerul (utilizator = numele mic)."""
+    if role == "trainer":
+        return trainer_headers()
+    username = name.lower().replace(" ", ".")
+    if username not in app_module.db["users"]:
+        r = client.post("/api/students", json={"username": username, "name": name, "password": password}, headers=trainer_headers())
+        assert r.status_code == 201, r.text
+    r = client.post("/api/login", json={"login": username, "password": password})
+    assert r.json()["role"] == role
+    return auth(r)
 
 
-def test_class_code_required_when_set(monkeypatch):
-    monkeypatch.setattr(app_module, "CLASS_CODE", "VIBE2026")
-    base = {"name": "Ana", "email": "ana@test.ro", "password": "parola-buna"}
-    assert client.post("/api/register", json=base).status_code == 403
-    assert client.post("/api/register", json={**base, "class_code": "VIBE2026"}).status_code == 201
-    # Trainerul (din TRAINER_EMAILS) nu are nevoie de codul clasei
-    assert client.post("/api/register", json={"name": "Radu", "email": "radu@test.ro", "password": "parola-buna"}).status_code == 201
-    assert client.get("/api/config").json()["class_code_required"] is True
+def test_trainer_setup_needs_code_and_listed_email():
+    base = {**TRAINER}
+    assert client.get("/api/config").json()["needs_setup"] is True
+    assert client.post("/api/setup", json={**base, "trainer_code": "gresit"}).status_code == 403
+    assert client.post("/api/setup", json={**base, "email": "altcineva@test.ro"}).status_code == 403
+    assert client.post("/api/setup", json={**base, "password": "scurt"}).status_code == 400
+    r = client.post("/api/setup", json=base)
+    assert r.status_code == 201 and r.json()["role"] == "trainer"
+    assert client.post("/api/setup", json=base).status_code == 409
+    assert client.get("/api/config").json()["needs_setup"] is False
+    # Trainerul intră cu emailul (litere mari / spații nu contează)
+    assert client.post("/api/login", json={"login": " Radu@Test.ro ", "password": "parola-test"}).json()["role"] == "trainer"
+
+
+def test_setup_is_off_without_trainer_code(monkeypatch):
+    monkeypatch.setattr(app_module, "TRAINER_CODE", "")
+    assert client.post("/api/setup", json=TRAINER).status_code == 403
+    assert client.get("/api/config").json()["setup_enabled"] is False
+
+
+def test_setup_code_cannot_be_brute_forced():
+    for _ in range(5):
+        assert client.post("/api/setup", json={**TRAINER, "trainer_code": "ghicit-1"}).status_code == 403
+    assert client.post("/api/setup", json=TRAINER).status_code == 429
+
+
+def test_no_oauth_signup():
+    for path in ("/api/auth/google", "/api/auth/supabase"):
+        assert client.post(path, json={"name": "X", "email": "x@x.ro", "password": "parola-buna"}).status_code in (404, 405)
+
+
+def test_students_register_with_email_and_password():
+    body = {"name": "Ana Pop", "email": " Ana@Test.ro ", "password": "parola-buna"}
+    r = client.post("/api/register", json=body)
+    assert r.status_code == 201 and r.json()["role"] == "student"
+    assert client.post("/api/register", json=body).status_code == 409
+    assert client.post("/api/register", json={**body, "email": "nu-e-email"}).status_code == 400
+    assert client.post("/api/register", json={**body, "email": "b@test.ro", "password": "scurt"}).status_code == 400
+    r = client.post("/api/login", json={"login": "ana@test.ro", "password": "parola-buna"})
+    assert r.status_code == 200 and r.json()["role"] == "student"
+    me = client.get("/api/me", headers=auth(r)).json()
+    assert me["role"] == "student" and me["email"] == "ana@test.ro"
+    # Un student nu poate face nimic de trainer
+    assert client.get("/api/students", headers=auth(r)).status_code == 403
+
+
+def test_only_trainer_email_becomes_trainer_and_needs_code():
+    base = {"name": "Radu", "email": "Radu@test.ro", "password": "parola-test"}
+    assert client.post("/api/register", json=base).status_code == 428
+    assert client.post("/api/register", json={**base, "trainer_code": "gresit"}).status_code == 403
+    r = client.post("/api/register", json={**base, "trainer_code": "cod-trainer-test"})
+    assert r.status_code == 201 and r.json()["role"] == "trainer"
+    assert client.post("/api/register", json={**base, "trainer_code": "cod-trainer-test"}).status_code == 409
+    assert client.get("/api/config").json()["needs_setup"] is False
+
+
+def test_trainer_email_without_code_only_while_no_trainer(monkeypatch):
+    monkeypatch.setattr(app_module, "TRAINER_CODE", "")
+    base = {"name": "Radu", "email": "radu@test.ro", "password": "parola-test"}
+    assert client.post("/api/register", json=base).json()["role"] == "trainer"
+    app_module.db["users"].pop("radu@test.ro")
+    app_module.db["users"]["alt@test.ro"] = {"name": "X", "role": "trainer", "email": "alt@test.ro", "gen": 0}
+    assert client.post("/api/register", json=base).status_code == 409
+
+
+def test_default_trainer_email_is_radu():
+    assert app_module.DEFAULT_TRAINER_EMAIL == "stoichin.radu23@gmail.com"
+
+
+def test_registered_students_dont_see_each_others_questions():
+    a = auth(client.post("/api/register", json={"name": "A", "email": "a@test.ro", "password": "parola-buna"}))
+    b = auth(client.post("/api/register", json={"name": "B", "email": "b@test.ro", "password": "parola-buna"}))
+    assert client.post("/api/questions", json={"text": "Intrebarea lui A?"}, headers=a).status_code in (200, 201)
+    assert len(client.get("/api/questions", headers=a).json()) == 1
+    assert client.get("/api/questions", headers=b).json() == []
+
+
+def test_registration_can_be_closed(monkeypatch):
+    monkeypatch.setattr(app_module, "REGISTRATION_OPEN", False)
+    assert client.post("/api/register", json={"name": "A", "email": "a@test.ro", "password": "parola-buna"}).status_code == 403
+    assert client.get("/api/config").json()["registration"] is False
+
+
+def test_only_trainer_creates_students_with_valid_usernames():
+    ht, ana = login("Radu", "trainer"), login("Ana")
+    body = {"username": "mihai", "name": "Mihai Ionescu", "password": "parola-mihai"}
+    assert client.post("/api/students", json=body, headers=ana).status_code == 403
+    assert client.post("/api/students", json=body).status_code == 401
+    for bad in ("ab", "cu spatiu", "ana@x.ro", "-minus", "x" * 40):
+        assert client.post("/api/students", json={**body, "username": bad}, headers=ht).status_code in (400, 422), bad
+    assert client.post("/api/students", json={**body, "password": "scurt"}, headers=ht).status_code == 400
+    r = client.post("/api/students", json={**body, "username": "Mihai"}, headers=ht)
+    assert r.status_code == 201 and r.json() == {"key": "mihai", "username": "mihai", "name": "Mihai Ionescu"}
+    assert client.post("/api/students", json=body, headers=ht).status_code == 409
+    assert client.post("/api/students", json={**body, "username": "radu@test.ro"}, headers=ht).status_code == 400
+    r = client.post("/api/login", json={"login": "MIHAI", "password": "parola-mihai"})
+    assert r.json() == {**r.json(), "name": "Mihai Ionescu", "role": "student"}
+    me = client.get("/api/me", headers=auth(r)).json()
+    assert me["login"] == "mihai" and me["email"] is None
+    assert {s["key"] for s in client.get("/api/students", headers=ht).json()} == {"ana", "mihai"}
+
+
+def test_trainer_renames_sets_password_and_deletes_student():
+    ht, ana = login("Radu", "trainer"), login("Ana")
+    assert client.patch("/api/students/ana", json={"name": "Ana P."}, headers=ana).status_code == 403
+    assert client.patch("/api/students/radu@test.ro", json={"name": "X"}, headers=ht).status_code == 404
+    assert client.patch("/api/students/ana", json={"name": "Ana P."}, headers=ht).json()["name"] == "Ana P."
+    assert client.get("/api/me", headers=ana).json()["name"] == "Ana P."      # numele nou apare imediat
+    assert client.patch("/api/students/ana", json={"password": "scurt"}, headers=ht).status_code == 400
+    assert client.patch("/api/students/ana", json={"password": "parola-noua-ana"}, headers=ht).status_code == 200
+    assert client.get("/api/me", headers=ana).status_code == 401              # sesiunile vechi s-au închis
+    ana = auth(client.post("/api/login", json={"login": "ana", "password": "parola-noua-ana"}))
+    client.post("/api/questions", json={"text": "Întrebarea Anei"}, headers=ana)
+    assert client.delete("/api/students/ana", headers=ana).status_code == 403
+    assert client.delete("/api/students/ana", headers=ht).json() == {"ok": True}
+    assert client.get("/api/me", headers=ana).status_code == 401
+    assert client.post("/api/login", json={"login": "ana", "password": "parola-noua-ana"}).status_code == 401
+    assert client.get("/api/questions", headers=ht).json()[0]["text"] == "Întrebarea Anei"   # ce a scris rămâne
 
 
 def test_login_lockout_after_failed_attempts():
     login("Ana")
     for _ in range(5):
-        assert client.post("/api/login", json={"email": "ana@test.ro", "password": "gresit!!"}).status_code == 401
-    r = client.post("/api/login", json={"email": "ana@test.ro", "password": "parola-test"})
+        assert client.post("/api/login", json={"login": "ana", "password": "gresit!!"}).status_code == 401
+    r = client.post("/api/login", json={"login": "ana", "password": "parola-test"})
     assert r.status_code == 429
 
 
-def test_wrong_email_and_wrong_password_look_the_same():
+def test_wrong_username_and_wrong_password_look_the_same():
     login("Ana")
-    a = client.post("/api/login", json={"email": "nimeni@test.ro", "password": "orice-parola"}).json()
-    b = client.post("/api/login", json={"email": "ana@test.ro", "password": "orice-parola"}).json()
+    a = client.post("/api/login", json={"login": "nimeni", "password": "orice-parola"}).json()
+    b = client.post("/api/login", json={"login": "ana", "password": "orice-parola"}).json()
     assert a == b
 
 
-def test_google_login_disabled_without_client_id():
-    assert client.post("/api/auth/google", json={"credential": "x" * 20}).status_code == 404
-
-
-def test_google_login_creates_account(monkeypatch):
-    from google.oauth2 import id_token
-    monkeypatch.setattr(app_module, "GOOGLE_CLIENT_ID", "client-123")
-    monkeypatch.setattr(id_token, "verify_oauth2_token",
-                        lambda tok, req, aud: {"email": "Madalina@Gmail.com", "email_verified": True, "name": "Madalina"})
-    r = client.post("/api/auth/google", json={"credential": "x" * 20})
-    assert r.status_code == 200 and r.json()["name"] == "Madalina" and r.json()["role"] == "student"
-    assert "madalina@gmail.com" in app_module.db["users"]
-    monkeypatch.setattr(id_token, "verify_oauth2_token",
-                        lambda tok, req, aud: {"email": "x@gmail.com", "email_verified": False})
-    assert client.post("/api/auth/google", json={"credential": "x" * 20}).status_code == 401
+def test_forged_or_tampered_tokens_are_rejected():
+    ana = login("Ana")
+    token = ana["Authorization"].split()[1]
+    payload, sig = token.split(".")
+    import base64, json as js
+    data = js.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    forged = base64.urlsafe_b64encode(js.dumps({**data, "k": "radu@test.ro"}).encode()).rstrip(b"=").decode()
+    login("Radu", "trainer")
+    for bad in (f"{forged}.{sig}", token + "x", "nu-e-token", ""):
+        assert client.get("/api/me", headers={"Authorization": f"Bearer {bad}"}).status_code == 401
 
 
 def test_trainer_can_reset_a_student_password():
     ana = login("Ana")
     trainer = login("Radu", "trainer")
-    assert client.post("/api/students/ana@test.ro/reset-password", headers=ana).status_code == 403
-    temp = client.post("/api/students/ana@test.ro/reset-password", headers=trainer).json()["temporary_password"]
+    assert client.post("/api/students/ana/reset-password", headers=ana).status_code == 403
+    temp = client.post("/api/students/ana/reset-password", headers=trainer).json()["temporary_password"]
     assert client.get("/api/me", headers=ana).status_code == 401  # sesiunea veche s-a închis
-    assert client.post("/api/login", json={"email": "ana@test.ro", "password": temp}).status_code == 200
+    assert client.post("/api/login", json={"login": "ana", "password": temp}).status_code == 200
 
 
 def test_questions_visible_only_to_author_and_trainer():
@@ -190,7 +293,7 @@ def test_student_b_cannot_log_in_as_student_a():
     client.post("/api/questions", json={"text": "Întrebarea Anei"}, headers=ana)
 
     # Studentul B încearcă să intre pe contul Anei
-    r = client.post("/api/login", json={"email": "ana@test.ro", "password": "ghicit123"})
+    r = client.post("/api/login", json={"login": "ana", "password": "ghicit123"})
     assert r.status_code == 401
 
     bob = login("Bob", password="parola-bob1")
@@ -199,7 +302,7 @@ def test_student_b_cannot_log_in_as_student_a():
 
 
 def test_password_required_and_not_exposed():
-    r = client.post("/api/register", json={"name": "Ana", "email": "ana@test.ro", "password": "123"})
+    r = client.post("/api/students", json={"username": "ana", "name": "Ana", "password": "123"}, headers=login("Radu", "trainer"))
     assert r.status_code == 400
     login("Ana")
     assert "parola-test" not in str(app_module.db["users"])
@@ -260,9 +363,9 @@ def test_ai_answer_is_stored_once(monkeypatch):
 
 
 def test_errors_follow_selected_language():
-    bad = {"email": "nimeni@test.ro", "password": "orice-parola"}
-    assert client.post("/api/login", json=bad, headers={"X-Lang": "en"}).json()["detail"] == "Wrong email or password."
-    assert client.post("/api/login", json=bad).json()["detail"] == "Email sau parolă greșită."
+    bad = {"login": "nimeni", "password": "orice-parola"}
+    assert client.post("/api/login", json=bad, headers={"X-Lang": "en"}).json()["detail"] == "Wrong username or password."
+    assert client.post("/api/login", json=bad).json()["detail"] == "Utilizator sau parolă greșită."
 
 
 def test_local_refine_in_english():
@@ -328,10 +431,12 @@ def test_trainer_reviews_submission():
 def test_session_survives_restart_and_logout_ends_it():
     ana = login("Ana")
     token = ana["Authorization"].split()[1]
-    assert token not in str(app_module.db["sessions"])  # se salvează doar hash-ul
+    other = login("Ana")                                  # același student, alt dispozitiv
     assert client.get("/api/me", headers=ana).json()["name"] == "Ana"
     client.post("/api/logout", headers=ana)
     assert client.get("/api/me", headers=ana).status_code == 401
+    assert token not in str(app_module.db["revoked"])      # se salvează doar hash-ul
+    assert client.get("/api/me", headers=other).status_code == 200   # „Ieși” nu scoate celelalte dispozitive
 
 
 def test_prefs_are_saved():
@@ -342,8 +447,8 @@ def test_prefs_are_saved():
 
 
 def test_errors_in_french():
-    r = client.post("/api/login", json={"email": "nimeni@test.ro", "password": "orice-parola"}, headers={"X-Lang": "fr"})
-    assert r.json()["detail"] == "E-mail ou mot de passe incorrect."
+    r = client.post("/api/login", json={"login": "nimeni", "password": "orice-parola"}, headers={"X-Lang": "fr"})
+    assert r.json()["detail"] == "Identifiant ou mot de passe incorrect."
 
 
 # ---------------------------------------------------------------- mesaje directe
@@ -353,16 +458,16 @@ def test_direct_messages_are_private():
     trainer = login("Radu", "trainer")
     client.post("/api/dm", json={"text": "Bună! Am o întrebare despre temă."}, headers=ana)
     assert client.get("/api/dm", headers=bob).json()["messages"] == []
-    assert client.get("/api/dm/ana@test.ro", headers=bob).status_code == 403
+    assert client.get("/api/dm/ana", headers=bob).status_code == 403
     assert client.get("/api/dm/unread", headers=trainer).json()["unread"] == 1
 
     threads = client.get("/api/dm", headers=trainer).json()["threads"]
-    ana_thread = next(t for t in threads if t["student_key"] == "ana@test.ro")
+    ana_thread = next(t for t in threads if t["student_key"] == "ana")
     assert ana_thread["unread"] == 1
-    assert len(client.get("/api/dm/ana@test.ro", headers=trainer).json()["messages"]) == 1
+    assert len(client.get("/api/dm/ana", headers=trainer).json()["messages"]) == 1
     assert client.get("/api/dm/unread", headers=trainer).json()["unread"] == 0  # citit
 
-    client.post("/api/dm/ana@test.ro", json={"text": "Sigur, spune!"}, headers=trainer)
+    client.post("/api/dm/ana", json={"text": "Sigur, spune!"}, headers=trainer)
     assert client.get("/api/dm/unread", headers=ana).json()["unread"] == 1
     msgs = client.get("/api/dm", headers=ana).json()["messages"]
     assert [m["from_role"] for m in msgs] == ["student", "trainer"]
@@ -389,7 +494,7 @@ def test_points_follow_the_rules(monkeypatch):
     client.post(f"/api/proposals/{pid}/choose", headers=trainer)
     for i in range(5):
         client.post("/api/questions", json={"text": f"Întrebarea {i}?"}, headers=ana)
-    client.post("/api/points/bonus", json={"student_key": "ana@test.ro", "points": 7, "reason": "Ajutor colegilor"},
+    client.post("/api/points/bonus", json={"student_key": "ana", "points": 7, "reason": "Ajutor colegilor"},
                 headers=trainer)
 
     me = client.get("/api/points/me", headers=ana).json()
@@ -402,12 +507,12 @@ def test_points_follow_the_rules(monkeypatch):
 def test_bonus_rules_and_access():
     ana = login("Ana")
     trainer = login("Radu", "trainer")
-    body = {"student_key": "ana@test.ro", "points": 10, "reason": "x"}
+    body = {"student_key": "ana", "points": 10, "reason": "x"}
     assert client.post("/api/points/bonus", json=body, headers=ana).status_code == 403
     assert client.post("/api/points/bonus", json={**body, "points": 0}, headers=trainer).status_code == 400
     assert client.post("/api/points/bonus", json={**body, "reason": " "}, headers=trainer).status_code == 400
     assert client.post("/api/points/bonus", json={**body, "student_key": "zz"}, headers=trainer).status_code == 404
-    assert client.get("/api/points/ana@test.ro", headers=ana).status_code == 403
+    assert client.get("/api/points/ana", headers=ana).status_code == 403
 
 
 def test_leaderboard_respects_hide():
@@ -504,10 +609,12 @@ def test_change_password():
     body = {"current": "gresita!!", "new": "parola-noua-1"}
     assert client.post("/api/me/password", json=body, headers=ana).status_code == 403
     assert client.post("/api/me/password", json={**body, "current": "parola-test", "new": "scurt"}, headers=ana).status_code == 400
-    assert client.post("/api/me/password", json={**body, "current": "parola-test"}, headers=ana).status_code == 200
-    assert client.post("/api/login", json={"email": "ana@test.ro", "password": "parola-noua-1"}).status_code == 200
-    me = client.get("/api/me", headers=ana).json()
-    assert me["email"] == "ana@test.ro" and me["has_password"] is True
+    r = client.post("/api/me/password", json={**body, "current": "parola-test"}, headers=ana)
+    assert r.status_code == 200
+    assert client.get("/api/me", headers=ana).status_code == 401           # alte dispozitive ies
+    assert client.post("/api/login", json={"login": "ana", "password": "parola-noua-1"}).status_code == 200
+    me = client.get("/api/me", headers=auth(r)).json()                       # dispozitivul curent rămâne logat
+    assert me["login"] == "ana" and me["has_password"] is True
 
 
 # ---------------------------------------------------------------- retragere & ciorne
@@ -554,187 +661,6 @@ def test_drafts_are_private_and_limited():
     assert client.delete(f"/api/drafts/{d['id']}", headers=ana).status_code == 200
     assert len(client.get("/api/drafts", headers=ana).json()) == 19
 
-
-# ---------------------------------------------------------------- Supabase Auth (cu un Supabase fals)
-
-import base64
-import json as _json
-import httpx
-from src import supa
-
-
-class FakeSupabase:
-    """Imită API-ul REST Supabase Auth: conturi, confirmare pe email, resetare."""
-
-    def __init__(self, autoconfirm=False, google=True):
-        self.users, self.tokens, self.sent = {}, {}, []
-        self.autoconfirm, self.google = autoconfirm, google
-
-    def token_for(self, email, provider="email"):
-        tok = f"tok-{len(self.tokens)}-{email}"
-        self.tokens[tok] = (email, provider)
-        return tok
-
-    def confirm(self, email):
-        self.users[email]["confirmed"] = True
-        return self.token_for(email)
-
-    def handler(self, request):
-        assert request.headers["apikey"] == "anon-test"
-        path, body = request.url.path, _json.loads(request.content or b"{}")
-        if path == "/auth/v1/settings":
-            return httpx.Response(200, json={"external": {"google": self.google}, "mailer_autoconfirm": self.autoconfirm})
-        if path == "/auth/v1/signup":
-            if body["email"] in self.users:
-                return httpx.Response(422, json={"code": "user_already_exists", "msg": "User already registered"})
-            self.users[body["email"]] = {"password": body["password"], "confirmed": self.autoconfirm, "name": body["data"]["name"]}
-            if self.autoconfirm:
-                return httpx.Response(200, json={"access_token": self.token_for(body["email"])})
-            self.sent.append(("confirm", body["email"]))
-            return httpx.Response(200, json={"id": "u1", "email": body["email"]})
-        if path == "/auth/v1/token":
-            u = self.users.get(body["email"])
-            if not u or u["password"] != body["password"]:
-                return httpx.Response(400, json={"code": "invalid_credentials", "msg": "Invalid login credentials"})
-            if not u["confirmed"]:
-                return httpx.Response(400, json={"code": "email_not_confirmed", "msg": "Email not confirmed"})
-            return httpx.Response(200, json={"access_token": self.token_for(body["email"])})
-        if path == "/auth/v1/recover":
-            self.sent.append(("recover", body["email"]))
-            return httpx.Response(200, json={})
-        if path == "/auth/v1/user":
-            found = self.tokens.get(request.headers["authorization"].removeprefix("Bearer "))
-            if not found:
-                return httpx.Response(401, json={"msg": "invalid JWT"})
-            email, provider = found
-            if request.method == "PUT":
-                self.users.setdefault(email, {"confirmed": True, "name": email})["password"] = body["password"]
-                return httpx.Response(200, json={"email": email})
-            u = self.users.get(email, {"confirmed": True, "name": "Google " + email})
-            return httpx.Response(200, json={
-                "email": email, "email_confirmed_at": "2026-01-01T00:00:00Z" if u["confirmed"] else None,
-                "app_metadata": {"provider": provider}, "user_metadata": {"name": u["name"]}})
-        return httpx.Response(404)
-
-
-@pytest.fixture
-def fake_supabase(monkeypatch):
-    fake = FakeSupabase()
-    monkeypatch.setenv("SUPABASE_URL", "https://proiect.supabase.co")
-    monkeypatch.setenv("SUPABASE_ANON_KEY", "anon-test")
-    monkeypatch.setattr(supa, "_transport", httpx.MockTransport(fake.handler))
-    monkeypatch.setattr(supa, "_settings_cache", {"at": 0.0, "value": None})
-    app_module._recover_sent.clear()
-    app_module.db["supabase_pending"] = {}
-    return fake
-
-
-def test_supabase_signup_needs_email_confirmation(fake_supabase):
-    cfg = client.get("/api/config").json()
-    assert cfg["supabase"] == {"url": "https://proiect.supabase.co", "google": True}
-    assert "anon-test" not in _json.dumps(cfg)  # cheia rămâne pe server
-    r = client.post("/api/register", json={"name": "Madalina", "email": "madalina@test.ro", "password": "parola-buna"})
-    assert r.status_code == 201 and r.json()["confirm_email"] is True and "token" not in r.json()
-    assert fake_supabase.sent == [("confirm", "madalina@test.ro")]
-    # Fără confirmare nu se poate intra
-    r = client.post("/api/login", json={"email": "madalina@test.ro", "password": "parola-buna"})
-    assert r.status_code == 403
-    # Linkul din email aduce tokenul înapoi; serverul îl verifică la Supabase
-    r = client.post("/api/auth/supabase", json={"access_token": fake_supabase.confirm("madalina@test.ro")})
-    assert r.status_code == 200 and r.json()["name"] == "Madalina" and r.json()["role"] == "student"
-    r = client.post("/api/login", json={"email": "madalina@test.ro", "password": "parola-buna"})
-    assert r.status_code == 200
-    me = client.get("/api/me", headers={"Authorization": f"Bearer {r.json()['token']}"}).json()
-    assert me["has_password"] is True
-    # Parola nu e salvată la noi
-    assert "hash" not in app_module.db["users"]["madalina@test.ro"]
-
-
-def test_supabase_rejects_fake_tokens_and_wrong_passwords(fake_supabase):
-    assert client.post("/api/auth/supabase", json={"access_token": "token-inventat"}).status_code == 401
-    fake_supabase.autoconfirm = True
-    assert client.post("/api/register", json={"name": "Ana", "email": "ana@test.ro", "password": "parola-buna"}).status_code == 201
-    assert client.post("/api/login", json={"email": "ana@test.ro", "password": "gresit!!"}).status_code == 401
-    assert client.post("/api/login", json={"email": "nimeni@test.ro", "password": "gresit!!"}).json()["detail"] == \
-        client.post("/api/login", json={"email": "ana@test.ro", "password": "gresit!!"}).json()["detail"]
-    for _ in range(3):
-        client.post("/api/login", json={"email": "ana@test.ro", "password": "gresit!!"})
-    assert client.post("/api/login", json={"email": "ana@test.ro", "password": "parola-buna"}).status_code == 429
-
-
-def test_supabase_trainer_email_needs_verified_email(fake_supabase, monkeypatch):
-    # Fără confirmare pe email, oricine ar putea pretinde emailul trainerului
-    fake_supabase.autoconfirm = True
-    r = client.post("/api/register", json={"name": "Impostor", "email": "radu@test.ro", "password": "parola-buna"})
-    assert r.json()["role"] == "student"
-    # Cu confirmare pe email (sau Google), emailul din TRAINER_EMAILS devine trainer
-    app_module.db["users"].clear()
-    monkeypatch.setattr(supa, "_settings_cache", {"at": 0.0, "value": None})
-    fake_supabase.autoconfirm = False
-    r = client.post("/api/auth/supabase", json={"access_token": fake_supabase.token_for("radu@test.ro", "google")})
-    assert r.json()["role"] == "trainer"
-
-
-def test_supabase_class_code_and_google(fake_supabase, monkeypatch):
-    monkeypatch.setattr(app_module, "CLASS_CODE", "VIBE2026")
-    google_token = fake_supabase.token_for("vlad@gmail.com", "google")
-    assert client.post("/api/auth/supabase", json={"access_token": google_token}).status_code == 403
-    r = client.post("/api/auth/supabase", json={"access_token": google_token, "class_code": "VIBE2026"})
-    assert r.status_code == 200 and r.json()["name"] == "Google vlad@gmail.com"
-    # Codul verificat la „Cont nou” rămâne valabil când revine din linkul de confirmare
-    assert client.post("/api/register", json={"name": "Ana", "email": "ana@test.ro", "password": "parola-buna"}).status_code == 403
-    assert client.post("/api/register", json={"name": "Ana", "email": "ana@test.ro", "password": "parola-buna", "class_code": "VIBE2026"}).json()["confirm_email"]
-    assert client.post("/api/auth/supabase", json={"access_token": fake_supabase.confirm("ana@test.ro")}).status_code == 200
-
-
-def test_supabase_password_reset(fake_supabase):
-    fake_supabase.autoconfirm = True
-    client.post("/api/register", json={"name": "Ana", "email": "ana@test.ro", "password": "parola-buna"})
-    for _ in range(3):
-        assert client.post("/api/auth/supabase/recover", json={"email": "ana@test.ro"}).status_code == 200
-    assert client.post("/api/auth/supabase/recover", json={"email": "ana@test.ro"}).status_code == 429
-    # Același răspuns pentru un email fără cont
-    assert client.post("/api/auth/supabase/recover", json={"email": "nimeni@test.ro"}).json() == {"ok": True}
-    link_token = fake_supabase.token_for("ana@test.ro")
-    assert client.post("/api/auth/supabase/new-password", json={"access_token": link_token, "password": "scurta"}).status_code == 400
-    r = client.post("/api/auth/supabase/new-password", json={"access_token": link_token, "password": "parola-noua-1"})
-    assert r.status_code == 200 and r.json()["name"] == "Ana"
-    assert client.post("/api/login", json={"email": "ana@test.ro", "password": "parola-noua-1"}).status_code == 200
-    # Schimbarea parolei din Setări cere parola actuală
-    h = {"Authorization": f"Bearer {r.json()['token']}"}
-    assert client.post("/api/me/password", headers=h, json={"current": "gresit!!", "new": "parola-noua-2"}).status_code == 403
-    assert client.post("/api/me/password", headers=h, json={"current": "parola-noua-1", "new": "parola-noua-2"}).status_code == 200
-    assert fake_supabase.users["ana@test.ro"]["password"] == "parola-noua-2"
-
-
-def test_supabase_trainer_reset_sends_email_and_privacy_holds(fake_supabase):
-    fake_supabase.autoconfirm = True
-    a = client.post("/api/register", json={"name": "Ana", "email": "ana@test.ro", "password": "parola-buna"}).json()
-    b = client.post("/api/register", json={"name": "Vlad", "email": "vlad@test.ro", "password": "parola-buna"}).json()
-    ha, hb = ({"Authorization": f"Bearer {x['token']}"} for x in (a, b))
-    client.post("/api/questions", headers=ha, json={"text": "Cum pun cheia API în .env?", "category": "security"})
-    assert client.get("/api/questions", headers=hb).json() == []
-    trainer = client.post("/api/register", json={"name": "Radu", "email": "radu2@test.ro", "password": "parola-buna", "trainer_code": "cod-trainer-test"}).json()
-    assert trainer["role"] == "trainer"
-    r = client.post("/api/students/ana@test.ro/reset-password", headers={"Authorization": f"Bearer {trainer['token']}"})
-    assert r.json() == {"temporary_password": None, "email_sent": True}
-    assert ("recover", "ana@test.ro") in fake_supabase.sent
-    assert client.post("/api/students/ana@test.ro/reset-password", headers=hb).status_code == 403
-
-
-def test_supabase_down_gives_clear_error(fake_supabase, monkeypatch):
-    def broken(request):
-        raise httpx.ConnectError("down")
-    monkeypatch.setattr(supa, "_transport", httpx.MockTransport(broken))
-    r = client.post("/api/login", json={"email": "ana@test.ro", "password": "parola-buna"})
-    assert r.status_code == 503 and "Supabase" in r.json()["detail"]
-
-
-def test_supabase_trainer_email_does_not_skip_class_code(fake_supabase, monkeypatch):
-    monkeypatch.setattr(app_module, "CLASS_CODE", "VIBE2026")
-    fake_supabase.autoconfirm = True
-    r = client.post("/api/register", json={"name": "Impostor", "email": "radu@test.ro", "password": "parola-buna"})
-    assert r.status_code == 403
 
 
 # ---------------------------------------------------------------- Byte: briefing-ul zilei
@@ -831,14 +757,12 @@ def test_digest_is_due_once_a_day():
 def test_weak_trainer_codes_are_ignored(monkeypatch):
     # Codul din README / .env.example îl știe oricine: nu face pe nimeni trainer
     monkeypatch.setattr(app_module, "TRAINER_CODE", "")
-    r = client.post("/api/register", json={"name": "X", "email": "x@x.ro", "password": "parola-buna", "trainer_code": "schimba-ma"})
-    assert r.status_code == 403
-    r = client.post("/api/register", json={"name": "X", "email": "x@x.ro", "password": "parola-buna", "trainer_code": ""})
-    assert r.json()["role"] == "student"
+    for code in ("schimba-ma", ""):
+        assert client.post("/api/setup", json={**TRAINER, "trainer_code": code}).status_code == 403
 
 
 def test_health_and_atomic_save(tmp_path, monkeypatch):
-    assert client.get("/api/health").json() == {"ok": True, "storage": "file", "storage_error": False}
+    assert client.get("/api/health").json() == {"ok": True, "storage": "file", "serverless": False}
     monkeypatch.setenv("CUTIA_PERSIST", "1")
     monkeypatch.setattr(app_module, "DATA_FILE", tmp_path / "cutia.json")
     app_module.save_db()
@@ -1245,7 +1169,7 @@ def test_expired_subscription_is_removed(push):
     ha, ht = login("Ana"), login("Radu", "trainer")
     client.post("/api/push/subscribe", headers=ha, json=FakeBrowser("https://push.example/gone").sub)
     client.post("/api/live/start", headers=ht, json={})
-    assert app_module.db["push"]["ana@test.ro"] == []
+    assert app_module.db["push"]["ana"] == []
 
 
 # ---------------------------------------------------------------- Date și fișiere în Supabase (Supabase fals)
@@ -1254,23 +1178,37 @@ from src import store
 
 
 class FakeSupabaseDB:
-    """Imită PostgREST (tabelul cutia_state) și Storage (bucket-ul cutia-files)."""
+    """Imită funcțiile cutia_sync / cutia_commit (Postgres prin PostgREST) și Storage (bucket-ul cutia-files)."""
 
     def __init__(self, rows=None, down=False):
-        self.rows, self.files, self.writes, self.down, self.headers = dict(rows or {}), {}, [], down, []
+        self.rows = {k: {"version": 1, "data": v} for k, v in (rows or {}).items()}
+        self.files, self.writes, self.down, self.headers, self.syncs = {}, [], down, [], 0
+
+    def other_server_writes(self, name, data):
+        """Altă copie a serverului (de ex. altă funcție Vercel) scrie între timp."""
+        row = self.rows.setdefault(name, {"version": 0, "data": None})
+        row.update(version=row["version"] + 1, data=data)
 
     def handler(self, request):
         self.headers.append(dict(request.headers))
         if self.down:
             raise httpx.ConnectError("down")
         path = request.url.path
-        if path == "/rest/v1/cutia_state" and request.method == "GET":
-            return httpx.Response(200, json=[{"name": k, "data": v} for k, v in self.rows.items()])
-        if path == "/rest/v1/cutia_state" and request.method == "POST":
-            rows = _json.loads(request.content)
-            self.writes.append(sorted(r["name"] for r in rows))
-            self.rows.update({r["name"]: r["data"] for r in rows})
-            return httpx.Response(201)
+        if path == "/rest/v1/rpc/cutia_sync":
+            self.syncs += 1
+            known = _json.loads(request.content)["known"]
+            return httpx.Response(200, json=[
+                {"name": k, "version": r["version"], "changed": known.get(k) != r["version"],
+                 "data": r["data"] if known.get(k) != r["version"] else None} for k, r in self.rows.items()])
+        if path == "/rest/v1/rpc/cutia_commit":
+            changes = _json.loads(request.content)["changes"]
+            conflict = [c["name"] for c in changes if self.rows.get(c["name"], {}).get("version", 0) != c["version"]]
+            if conflict:
+                return httpx.Response(200, json={"ok": False, "conflict": conflict})
+            self.writes.append(sorted(c["name"] for c in changes))
+            for c in changes:
+                self.other_server_writes(c["name"], c["data"])
+            return httpx.Response(200, json={"ok": True, "versions": {c["name"]: self.rows[c["name"]]["version"] for c in changes}})
         if path.startswith("/storage/v1/object/cutia-files/"):
             name = path.rsplit("/", 1)[1]
             if request.method == "POST":
@@ -1292,39 +1230,77 @@ def supa_db(monkeypatch, tmp_path):
         monkeypatch.setenv("SUPABASE_SECRET_KEY", "sb_secret_testkey_123456789")
         monkeypatch.setenv("CUTIA_PERSIST", "1")
         monkeypatch.setattr(store, "_transport", httpx.MockTransport(fake.handler))
-        monkeypatch.setattr(store.Writer, "mark", lambda self: self.dirty.set())  # fără fir în fundal în teste
         monkeypatch.setattr(app_module.time, "sleep", lambda s: None)
         data_file = tmp_path / "cutia.json"
         if local is not None:
             data_file.write_text(_json.dumps(local))
         monkeypatch.setattr(app_module, "DATA_FILE", data_file)
-        monkeypatch.setattr(app_module, "_writer", None)
         return fake
     return make
 
 
 def test_supabase_storage_loads_and_writes_only_changes(supa_db):
-    fake = supa_db(rows={"users": {}, "questions": [], "sessions": {}})
+    fake = supa_db(rows={"users": {}, "questions": []})
     app_module.load_db()
-    assert app_module._writer is not None and fake.writes == []
+    assert fake.writes == []
     h = login("Ana")
+    fake.writes.clear()
     client.post("/api/questions", headers=h, json={"text": "Unde stau datele?", "category": "data"})
-    app_module._writer.flush()
-    assert set(fake.writes[-1]) <= {"users", "sessions", "questions", "next_id", "prefs"} and "questions" in fake.writes[-1]
-    assert fake.rows["questions"][0]["text"] == "Unde stau datele?"
-    app_module._writer.flush()
-    assert len(fake.writes) == 1                                  # nimic nou, nimic de scris
+    assert fake.writes == [["next_id", "questions"]]                 # doar ce s-a schimbat, imediat
+    assert fake.rows["questions"]["data"][0]["text"] == "Unde stau datele?"
+    client.get("/api/questions", headers=h)
+    assert len(fake.writes) == 1                                       # o citire nu scrie nimic
     # Cheia secretă merge doar ca apikey (cheile noi sb_secret_ nu sunt JWT) și nu ajunge în browser
     assert fake.headers[-1]["apikey"] == "sb_secret_testkey_123456789" and "authorization" not in fake.headers[-1]
     assert "sb_secret" not in client.get("/api/config").text
     assert client.get("/api/health").json()["storage"] == "supabase"
 
 
-def test_supabase_first_start_moves_local_data(supa_db):
-    fake = supa_db(rows={}, local={"faq": [{"id": 1, "q": "Q?", "a": "A", "created_at": "2026-01-01"}], "next_id": 2})
+def test_supabase_sees_writes_from_other_servers(supa_db):
+    """Pe Vercel rulează mai multe copii: fiecare cerere vede ce au scris celelalte."""
+    fake = supa_db(rows={"users": {}, "questions": []})
     app_module.load_db()
-    app_module._writer.flush()
-    assert fake.rows["faq"][0]["q"] == "Q?"
+    ht = login("Radu", "trainer")
+    fake.other_server_writes("announcements", [{"id": 99, "text": "Scris de alt server", "by": "Radu", "pinned": False, "created_at": "2026-10-14"}])
+    assert client.get("/api/announcements", headers=ht).json()[0]["text"] == "Scris de alt server"
+
+
+def test_supabase_conflict_replays_the_request(supa_db):
+    """Două servere scriu în același timp: al doilea reia cererea pe datele noi, nimic nu se pierde."""
+    fake = supa_db(rows={"users": {}, "questions": []})
+    app_module.load_db()
+    ana = login("Ana")
+    calls = {"n": 0}
+    real_commit = store.commit
+
+    def racing_commit(changes):
+        calls["n"] += 1
+        if calls["n"] == 1:   # chiar înainte să scriem noi, alt server adaugă o întrebare
+            q = {"id": 500, "text": "De pe alt server", "category": "other", "anonymous": False, "faq_ok": False,
+                 "author": "Ana", "author_key": "ana", "created_at": "2026-10-14T10:00:00+00:00",
+                 "answer": None, "answered_at": None, "ai_answer": None, "ai_answered_at": None}
+            fake.other_server_writes("questions", fake.rows["questions"]["data"] + [q])
+        return real_commit(changes)
+
+    store_commit = store.commit
+    store.commit = racing_commit
+    try:
+        r = client.post("/api/questions", headers=ana, json={"text": "A mea", "category": "other"})
+    finally:
+        store.commit = store_commit
+    assert r.status_code == 201 and calls["n"] == 2
+    texts = sorted(q["text"] for q in fake.rows["questions"]["data"])
+    assert texts == ["A mea", "De pe alt server"]
+    assert sorted(q["text"] for q in client.get("/api/questions", headers=ana).json()) == texts
+
+
+def test_supabase_failed_request_leaves_no_half_written_data(supa_db):
+    fake = supa_db(rows={"users": {}})
+    app_module.load_db()
+    login("Ana")
+    before = len(fake.writes)
+    assert client.post("/api/questions", headers={"Authorization": "Bearer x"}, json={"text": "x"}).status_code == 401
+    assert len(fake.writes) == before
 
 
 def test_supabase_down_never_starts_empty(supa_db):
@@ -1332,6 +1308,25 @@ def test_supabase_down_never_starts_empty(supa_db):
     with pytest.raises(RuntimeError):
         app_module.load_db()
     assert fake.writes == []
+
+
+def test_serverless_without_supabase_says_what_is_missing(monkeypatch):
+    monkeypatch.setattr(app_module, "SERVERLESS", True)
+    monkeypatch.setenv("CUTIA_PERSIST", "1")
+    r = client.get("/api/config", headers={"X-Lang": "en"})
+    assert r.status_code == 503 and "SUPABASE_SECRET_KEY" in r.json()["detail"]
+    assert client.get("/static/index.html").status_code == 200
+
+
+def test_cron_digest_needs_cron_secret(monkeypatch):
+    monkeypatch.setattr(app_module, "run_digest_in_background", lambda: calls.append(1))
+    monkeypatch.setattr(app_module.digest, "due", lambda d: True)
+    calls = []
+    assert client.get("/api/cron/digest").status_code == 401             # fără CRON_SECRET pe server: nimeni
+    monkeypatch.setenv("CRON_SECRET", "secret-cron-123")
+    assert client.get("/api/cron/digest", headers={"Authorization": "Bearer gresit"}).status_code == 401
+    assert client.get("/api/cron/digest", headers={"Authorization": "Bearer secret-cron-123"}).json() == {"ok": True}
+    assert calls == [1]
 
 
 def test_files_go_to_private_bucket(supa_db):
@@ -1414,9 +1409,9 @@ def test_refine_daily_limit(monkeypatch):
 
 def test_demo_seed_creates_accounts_and_data():
     app_module.seed_demo()
-    r = client.post("/api/login", json={"email": "trainer@demo.cutia", "password": app_module.DEMO_PASSWORD})
+    r = client.post("/api/login", json={"login": "trainer@demo.cutia", "password": app_module.DEMO_PASSWORD})
     assert r.status_code == 200 and r.json()["role"] == "trainer"
-    ana = client.post("/api/login", json={"email": "ana@demo.cutia", "password": app_module.DEMO_PASSWORD}).json()
+    ana = client.post("/api/login", json={"login": "ana", "password": app_module.DEMO_PASSWORD}).json()
     h = {"Authorization": f"Bearer {ana['token']}"}
     assert ana["role"] == "student" and len(client.get("/api/questions", headers=h).json()) == 2
     assert {p["decision"] for p in client.get("/api/proposals", headers=h).json()} == {"new", "discussing", "chosen"}

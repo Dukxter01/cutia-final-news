@@ -6,7 +6,11 @@ Spațiul public (toată clasa): cutia de idei, AI News, ghidul, clasamentul.
 Toate regulile de acces se verifică aici, pe server.
 """
 
+import asyncio
+import base64
 import contextvars
+import copy
+import random
 from contextlib import asynccontextmanager
 import hashlib
 import hmac
@@ -23,7 +27,8 @@ from typing import Optional
 from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
-from fastapi.responses import RedirectResponse, Response
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -46,7 +51,7 @@ def load_env_file(path: Path):
 load_env_file(current_dir.parent / ".env")
 
 try:
-    from . import ai, digest, news, points, repocheck, store, supa, tools, webpush
+    from . import ai, digest, news, points, repocheck, store, tools, webpush
 except ImportError:  # rulare directă: python app.py
     import store
     import webpush
@@ -56,7 +61,10 @@ except ImportError:  # rulare directă: python app.py
     import tools
     import news
     import points
-    import supa
+
+# Pe Vercel (sau altă gazdă „serverless”) nu avem fire în fundal și nici disc: datele stau în Supabase,
+# briefing-ul îl pornește Vercel Cron, iar o cerere poate avea maxim ~4,5 MB.
+SERVERLESS = bool(os.environ.get("VERCEL") or os.environ.get("CUTIA_SERVERLESS") == "1")
 
 DATA_FILE = Path(os.environ.get("CUTIA_DATA", current_dir.parent / "data" / "cutia.json"))
 UPLOAD_DIR = Path(os.environ.get("CUTIA_UPLOADS", DATA_FILE.parent / "uploads"))
@@ -68,10 +76,9 @@ if TRAINER_CODE.lower() in WEAK_TRAINER_CODES and os.environ.get("CUTIA_ALLOW_WE
 
 @asynccontextmanager
 async def lifespan(_app):
-    start_byte()  # robotul de știri (definit mai jos, la „Byte”)
+    if not SERVERLESS:
+        start_byte()  # robotul de știri (definit mai jos, la „Byte”); pe Vercel îl pornește Vercel Cron
     yield
-    if _writer is not None:  # la oprire (de ex. Render adoarme serverul), scriem tot ce a rămas
-        _writer.flush()
 
 
 app = FastAPI(title="Cutia Clasei API",
@@ -89,15 +96,21 @@ MESSAGES = {
     "short_password": ("Parola trebuie să aibă minim 8 caractere.", "Password must be at least 8 characters.", "Le mot de passe doit avoir au moins 8 caractères.", "La password deve avere almeno 8 caratteri.", "La contraseña debe tener al menos 8 caracteres.", "Das Passwort muss mindestens 8 Zeichen haben."),
     "bad_email": ("Adresa de email nu pare corectă.", "That email address doesn't look right.", "Cette adresse e-mail ne semble pas correcte.", "Questo indirizzo email non sembra corretto.", "Ese correo no parece correcto.", "Diese E-Mail-Adresse sieht nicht richtig aus."),
     "email_taken": ("Există deja un cont cu acest email. Intră în cont.", "An account with this email already exists. Sign in instead.", "Un compte existe déjà avec cet e-mail. Connecte-toi.", "Esiste già un account con questa email. Accedi.", "Ya existe una cuenta con este correo. Inicia sesión.", "Mit dieser E-Mail gibt es schon ein Konto. Melde dich an."),
-    "wrong_login": ("Email sau parolă greșită.", "Wrong email or password.", "E-mail ou mot de passe incorrect.", "Email o password errati.", "Correo o contraseña incorrectos.", "E-Mail oder Passwort falsch."),
+    "wrong_login": ("Utilizator sau parolă greșită.", "Wrong username or password.", "Identifiant ou mot de passe incorrect.", "Utente o password errati.", "Usuario o contraseña incorrectos.", "Benutzername oder Passwort falsch."),
+    "bad_username": ("Utilizatorul are 3–32 caractere: litere mici, cifre, punct, minus sau _ (fără spații).", "Usernames are 3–32 characters: lowercase letters, digits, dot, dash or _ (no spaces).", "L'identifiant fait 3 à 32 caractères : minuscules, chiffres, point, tiret ou _ (sans espaces).", "Il nome utente ha 3–32 caratteri: lettere minuscole, cifre, punto, trattino o _ (senza spazi).", "El usuario tiene 3–32 caracteres: minúsculas, números, punto, guion o _ (sin espacios).", "Der Benutzername hat 3–32 Zeichen: Kleinbuchstaben, Ziffern, Punkt, Bindestrich oder _ (ohne Leerzeichen)."),
+    "username_taken": ("Există deja un student cu acest utilizator. Alege altul.", "A student with this username already exists. Pick another one.", "Un étudiant avec cet identifiant existe déjà. Choisis-en un autre.", "Esiste già uno studente con questo nome utente. Scegline un altro.", "Ya existe un estudiante con este usuario. Elige otro.", "Diesen Benutzernamen gibt es schon. Wähl einen anderen."),
+    "setup_off": ("Contul de trainer se face cu TRAINER_CODE, care nu e setat pe server.", "The trainer account needs TRAINER_CODE, which isn't set on the server.", "Le compte formateur nécessite TRAINER_CODE, qui n'est pas défini sur le serveur.", "L'account trainer richiede TRAINER_CODE, che non è impostato sul server.", "La cuenta de formador necesita TRAINER_CODE, que no está configurado en el servidor.", "Das Trainer-Konto braucht TRAINER_CODE, das auf dem Server nicht gesetzt ist."),
+    "not_trainer_email": ("Acest email nu e în lista de traineri (TRAINER_EMAILS).", "This email isn't on the trainer list (TRAINER_EMAILS).", "Cet e-mail n'est pas dans la liste des formateurs (TRAINER_EMAILS).", "Questa email non è nell'elenco dei trainer (TRAINER_EMAILS).", "Este correo no está en la lista de formadores (TRAINER_EMAILS).", "Diese E-Mail steht nicht auf der Trainer-Liste (TRAINER_EMAILS)."),
+    "no_storage": ("Serverul nu are unde salva datele: setează SUPABASE_URL și SUPABASE_SECRET_KEY în Vercel.", "The server has nowhere to save data: set SUPABASE_URL and SUPABASE_SECRET_KEY in Vercel.", "Le serveur ne peut pas enregistrer les données : définis SUPABASE_URL et SUPABASE_SECRET_KEY dans Vercel.", "Il server non ha dove salvare i dati: imposta SUPABASE_URL e SUPABASE_SECRET_KEY in Vercel.", "El servidor no tiene dónde guardar los datos: configura SUPABASE_URL y SUPABASE_SECRET_KEY en Vercel.", "Der Server kann keine Daten speichern: setz SUPABASE_URL und SUPABASE_SECRET_KEY in Vercel."),
+    "storage_down": ("Baza de date (Supabase) nu răspunde. Încearcă peste un minut.", "The database (Supabase) isn't responding. Try again in a minute.", "La base de données (Supabase) ne répond pas. Réessaie dans une minute.", "Il database (Supabase) non risponde. Riprova tra un minuto.", "La base de datos (Supabase) no responde. Inténtalo en un minuto.", "Die Datenbank (Supabase) antwortet nicht. Versuch es in einer Minute."),
+    "storage_busy": ("Mulți colegi scriu chiar acum. Mai încearcă o dată.", "Lots of classmates are writing right now. Try once more.", "Beaucoup de camarades écrivent en ce moment. Réessaie.", "Molti compagni stanno scrivendo ora. Riprova.", "Muchos compañeros están escribiendo ahora. Inténtalo otra vez.", "Gerade schreiben viele gleichzeitig. Versuch es nochmal."),
     "too_many_attempts": ("Prea multe încercări. Mai încearcă peste 10 minute.", "Too many attempts. Try again in 10 minutes.", "Trop de tentatives. Réessaie dans 10 minutes.", "Troppi tentativi. Riprova tra 10 minuti.", "Demasiados intentos. Vuelve a intentarlo en 10 minutos.", "Zu viele Versuche. Versuch es in 10 Minuten wieder."),
-    "wrong_class_code": ("Codul clasei nu e corect. Îl primești de la trainer.", "The class code isn't right. Ask the trainer for it.", "Le code de la classe n'est pas correct. Demande-le au formateur.", "Il codice della classe non è corretto. Chiedilo al trainer.", "El código de la clase no es correcto. Pídeselo al formador.", "Der Klassencode stimmt nicht. Frag den Trainer danach."),
     "wrong_current": ("Parola actuală nu e corectă.", "Your current password isn't right.", "Le mot de passe actuel n'est pas correct.", "La password attuale non è corretta.", "La contraseña actual no es correcta.", "Das aktuelle Passwort stimmt nicht."),
-    "google_off": ("Intrarea cu Google nu e configurată pe server.", "Google sign-in isn't configured on the server.", "La connexion Google n'est pas configurée sur le serveur.", "L'accesso con Google non è configurato sul server.", "El inicio de sesión con Google no está configurado en el servidor.", "Die Google-Anmeldung ist auf dem Server nicht eingerichtet."),
-    "google_failed": ("Nu am putut verifica contul Google. Încearcă din nou.", "Couldn't verify the Google account. Try again.", "Impossible de vérifier le compte Google. Réessaie.", "Impossibile verificare l'account Google. Riprova.", "No se pudo verificar la cuenta de Google. Inténtalo de nuevo.", "Das Google-Konto konnte nicht geprüft werden. Versuch es nochmal."),
     "login_again": ("Autentifică-te din nou.", "Please sign in again.", "Reconnecte-toi.", "Accedi di nuovo.", "Vuelve a iniciar sesión.", "Bitte melde dich erneut an."),
     "trainer_only": ("Doar trainerul poate face asta.", "Only the trainer can do this.", "Seul le formateur peut faire ça.", "Solo il trainer può farlo.", "Solo el formador puede hacer esto.", "Nur der Trainer kann das tun."),
     "student_only": ("Doar studenții pot face asta.", "Only students can do this.", "Seuls les étudiants peuvent faire ça.", "Solo gli studenti possono farlo.", "Solo los estudiantes pueden hacer esto.", "Nur Studierende können das tun."),
+    "need_trainer_code": ("Acesta e emailul trainerului: scrie și codul de trainer.", "This is the trainer's email: enter the trainer code too.", "C'est l'e-mail du formateur : saisis aussi le code formateur.", "Questa è l'email del trainer: inserisci anche il codice trainer.", "Este es el correo del formador: escribe también el código de formador.", "Das ist die Trainer-E-Mail: gib auch den Trainer-Code ein."),
+    "registration_closed": ("Înscrierile sunt închise. Cere-i trainerului un cont.", "Sign-ups are closed. Ask the trainer for an account.", "Les inscriptions sont fermées. Demande un compte au formateur.", "Le iscrizioni sono chiuse. Chiedi un account al trainer.", "Las inscripciones están cerradas. Pide una cuenta al formador.", "Die Anmeldung ist geschlossen. Bitte den Trainer um ein Konto."),
     "need_name": ("Scrie-ți numele.", "Enter your name.", "Écris ton nom.", "Scrivi il tuo nome.", "Escribe tu nombre.", "Gib deinen Namen ein."),
     "wrong_code": ("Cod de trainer greșit.", "Wrong trainer code.", "Code formateur incorrect.", "Codice trainer errato.", "Código de formador incorrecto.", "Falscher Trainer-Code."),
     "too_short": ("Textul e prea scurt.", "The text is too short.", "Le texte est trop court.", "Il testo è troppo corto.", "El texto es demasiado corto.", "Der Text ist zu kurz."),
@@ -118,25 +131,20 @@ MESSAGES = {
     "need_title": ("Scrie un titlu.", "Add a title.", "Ajoute un titre.", "Aggiungi un titolo.", "Añade un título.", "Füge einen Titel hinzu."),
     "bad_link": ("Linkul trebuie să înceapă cu https:// sau http://.", "The link must start with https:// or http://.", "Le lien doit commencer par https:// ou http://.", "Il link deve iniziare con https:// o http://.", "El enlace debe empezar por https:// o http://.", "Der Link muss mit https:// oder http:// beginnen."),
     "too_many_files": ("Poți încărca maxim {} fișiere.", "You can upload at most {} files.", "Tu peux envoyer au maximum {} fichiers.", "Puoi caricare al massimo {} file.", "Puedes subir como máximo {} archivos.", "Du kannst höchstens {} Dateien hochladen."),
-    "file_too_big": ("Fișierul {} e prea mare (maxim 10 MB).", "File {} is too big (max 10 MB).", "Le fichier {} est trop gros (max 10 Mo).", "Il file {} è troppo grande (max 10 MB).", "El archivo {} es demasiado grande (máx. 10 MB).", "Die Datei {} ist zu groß (max. 10 MB)."),
+    "file_too_big": ("Fișierul {} e prea mare (maxim {} MB).", "File {} is too big (max {} MB).", "Le fichier {} est trop gros (max {} Mo).", "Il file {} è troppo grande (max {} MB).", "El archivo {} es demasiado grande (máx. {} MB).", "Die Datei {} ist zu groß (max. {} MB)."),
     "bad_file_type": ("Tipul fișierului {} nu e acceptat.", "File type of {} is not allowed.", "Le type du fichier {} n'est pas accepté.", "Il tipo del file {} non è consentito.", "El tipo del archivo {} no está permitido.", "Der Dateityp von {} ist nicht erlaubt."),
     "empty_submission": ("Adaugă un fișier, un link sau un mesaj.", "Add a file, a link or a message.", "Ajoute un fichier, un lien ou un message.", "Aggiungi un file, un link o un messaggio.", "Añade un archivo, un enlace o un mensaje.", "Füge eine Datei, einen Link oder eine Nachricht hinzu."),
     "no_student": ("Studentul nu există.", "Student not found.", "Étudiant introuvable.", "Studente non trovato.", "Estudiante no encontrado.", "Student nicht gefunden."),
     "no_assignment": ("Tema nu există.", "Assignment not found.", "Devoir introuvable.", "Compito non trovato.", "Tarea no encontrada.", "Aufgabe nicht gefunden."),
     "bad_points": ("Punctele trebuie să fie între -100 și 100, diferite de 0.", "Points must be between -100 and 100, not 0.", "Les points doivent être entre -100 et 100, sauf 0.", "I punti devono essere tra -100 e 100, diversi da 0.", "Los puntos deben estar entre -100 y 100, distintos de 0.", "Punkte müssen zwischen -100 und 100 liegen, nicht 0."),
     "need_reason": ("Scrie motivul bonusului.", "Add a reason for the bonus.", "Indique la raison du bonus.", "Scrivi il motivo del bonus.", "Escribe el motivo del bonus.", "Gib einen Grund für den Bonus an."),
-    "confirm_email_first": ("Confirmă întâi emailul: apasă linkul primit de la noi, apoi intră.", "Confirm your email first: click the link we sent you, then sign in.", "Confirme d'abord ton e-mail : clique sur le lien reçu, puis connecte-toi.", "Conferma prima l'email: clicca il link che ti abbiamo inviato, poi accedi.", "Confirma primero tu correo: pulsa el enlace que te enviamos y luego inicia sesión.", "Bestätige zuerst deine E-Mail: Klick auf den Link, den wir dir geschickt haben, dann melde dich an."),
-    "weak_password": ("Parola e prea slabă. Alege una mai lungă, cu litere și cifre.", "That password is too weak. Pick a longer one with letters and numbers.", "Ce mot de passe est trop faible. Choisis-en un plus long, avec lettres et chiffres.", "La password è troppo debole. Scegline una più lunga, con lettere e numeri.", "La contraseña es demasiado débil. Elige una más larga, con letras y números.", "Das Passwort ist zu schwach. Wähl ein längeres mit Buchstaben und Zahlen."),
-    "auth_down": ("Serviciul de conturi (Supabase) nu răspunde. Încearcă peste un minut.", "The account service (Supabase) isn't responding. Try again in a minute.", "Le service de comptes (Supabase) ne répond pas. Réessaie dans une minute.", "Il servizio account (Supabase) non risponde. Riprova tra un minuto.", "El servicio de cuentas (Supabase) no responde. Inténtalo en un minuto.", "Der Kontodienst (Supabase) antwortet nicht. Versuch es in einer Minute."),
-    "link_expired": ("Linkul a expirat sau a fost deja folosit. Cere unul nou.", "This link has expired or was already used. Ask for a new one.", "Ce lien a expiré ou a déjà été utilisé. Demandes-en un nouveau.", "Il link è scaduto o è già stato usato. Chiedine uno nuovo.", "El enlace ha caducado o ya se usó. Pide uno nuevo.", "Der Link ist abgelaufen oder wurde schon benutzt. Fordere einen neuen an."),
-    "supabase_off": ("Conturile Supabase nu sunt configurate pe server.", "Supabase accounts aren't configured on the server.", "Les comptes Supabase ne sont pas configurés sur le serveur.", "Gli account Supabase non sono configurati sul server.", "Las cuentas de Supabase no están configuradas en el servidor.", "Supabase-Konten sind auf dem Server nicht eingerichtet."),
     "not_github": ("Pune linkul repo-ului de GitHub, de forma https://github.com/nume/repo.", "Paste your GitHub repo link, like https://github.com/name/repo.", "Colle le lien de ton dépôt GitHub, comme https://github.com/nom/depot.", "Incolla il link del repo GitHub, tipo https://github.com/nome/repo.", "Pega el enlace de tu repo de GitHub, como https://github.com/nombre/repo.", "Füge den Link zu deinem GitHub-Repo ein, z. B. https://github.com/name/repo."),
     "repo_not_found": ("Nu găsesc repo-ul. Verifică linkul sau fă-l public (Settings → General → Danger Zone → Change visibility).", "Can't find that repo. Check the link or make it public (Settings → General → Danger Zone → Change visibility).", "Dépôt introuvable. Vérifie le lien ou rends-le public (Settings → General → Danger Zone → Change visibility).", "Repo non trovato. Controlla il link o rendilo pubblico (Settings → General → Danger Zone → Change visibility).", "No encuentro el repo. Revisa el enlace o hazlo público (Settings → General → Danger Zone → Change visibility).", "Repo nicht gefunden. Prüf den Link oder mach es öffentlich (Settings → General → Danger Zone → Change visibility)."),
     "github_busy": ("GitHub ne-a limitat cererile. Mai încearcă peste câteva minute.", "GitHub is limiting our requests. Try again in a few minutes.", "GitHub limite nos requêtes. Réessaie dans quelques minutes.", "GitHub sta limitando le richieste. Riprova tra qualche minuto.", "GitHub está limitando las peticiones. Inténtalo en unos minutos.", "GitHub begrenzt gerade die Anfragen. Versuch es in ein paar Minuten."),
     "github_down": ("Nu am putut citi repo-ul de pe GitHub acum. Încearcă din nou.", "Couldn't read the repo from GitHub right now. Try again.", "Impossible de lire le dépôt sur GitHub. Réessaie.", "Impossibile leggere il repo da GitHub ora. Riprova.", "No se pudo leer el repo de GitHub. Inténtalo de nuevo.", "Das Repo konnte gerade nicht von GitHub gelesen werden. Versuch es nochmal."),
     "slow_down": ("Încă puțin: poți încerca din nou peste {} secunde.", "Hang on: you can try again in {} seconds.", "Un instant : tu pourras réessayer dans {} secondes.", "Un attimo: puoi riprovare tra {} secondi.", "Un momento: puedes intentarlo en {} segundos.", "Moment: du kannst es in {} Sekunden wieder versuchen."),
     "need_error": ("Lipește mesajul de eroare sau adaugă o captură de ecran.", "Paste the error message or add a screenshot.", "Colle le message d'erreur ou ajoute une capture d'écran.", "Incolla il messaggio di errore o aggiungi uno screenshot.", "Pega el mensaje de error o añade una captura.", "Füge die Fehlermeldung oder einen Screenshot ein."),
-    "bad_image": ("Captura trebuie să fie PNG, JPG sau WebP, de maxim 5 MB.", "The screenshot must be PNG, JPG or WebP, max 5 MB.", "La capture doit être en PNG, JPG ou WebP, 5 Mo max.", "Lo screenshot deve essere PNG, JPG o WebP, max 5 MB.", "La captura debe ser PNG, JPG o WebP, de 5 MB como máximo.", "Der Screenshot muss PNG, JPG oder WebP sein, max. 5 MB."),
+    "bad_image": ("Captura trebuie să fie PNG, JPG sau WebP, de maxim {} MB.", "The screenshot must be PNG, JPG or WebP, max {} MB.", "La capture doit être en PNG, JPG ou WebP, {} Mo max.", "Lo screenshot deve essere PNG, JPG o WebP, max {} MB.", "La captura debe ser PNG, JPG o WebP, de {} MB como máximo.", "Der Screenshot muss PNG, JPG oder WebP sein, max. {} MB."),
     "no_item": ("Nu există.", "Not found.", "Introuvable.", "Non trovato.", "No encontrado.", "Nicht gefunden."),
     "own_like": ("Nu-ți poți aprecia propriul prompt.", "You can't like your own prompt.", "Tu ne peux pas aimer ton propre prompt.", "Non puoi mettere like al tuo prompt.", "No puedes dar me gusta a tu propio prompt.", "Du kannst deinen eigenen Prompt nicht liken."),
     "too_many_posts": ("Ai atins limita de {}. Șterge unul mai vechi.", "You've reached the limit of {}. Delete an older one.", "Tu as atteint la limite de {}. Supprimes-en un ancien.", "Hai raggiunto il limite di {}. Eliminane uno vecchio.", "Has llegado al límite de {}. Borra uno anterior.", "Du hast das Limit von {} erreicht. Lösch einen älteren."),
@@ -194,21 +202,26 @@ mimetypes.add_type("application/manifest+json", ".webmanifest")
 app.mount("/static", StaticFiles(directory=current_dir / "static"), name="static")
 
 # ---------------------------------------------------------------------------
-# Stocare: în memorie, salvată într-un fișier JSON ca să supraviețuiască
-# repornirilor. Sesiunile se salvează doar ca hash al tokenului.
+# Stocare: în memorie. Local se salvează într-un fișier JSON; cu Supabase (obligatoriu
+# pe Vercel) fiecare cerere citește ce s-a schimbat și scrie ce a schimbat ea.
 # ---------------------------------------------------------------------------
 
-_lock = threading.Lock()
-db = {
-    "users": {}, "sessions": {}, "prefs": {}, "drafts": [],
+_lock = threading.RLock()
+DEFAULTS = {
+    "users": {}, "revoked": {}, "prefs": {}, "drafts": [],
     "questions": [], "proposals": [], "submissions": [],
     "messages": [], "assignments": [], "announcements": [], "bonuses": [],
-    "supabase_pending": {}, "digests": [], "refine_log": {}, "next_id": 1,
+    "digests": [], "refine_log": {}, "next_id": 1,
 }
+db = copy.deepcopy(DEFAULTS)
 SESSION_DAYS = 60
 
+# Ce știm că e în Supabase: versiunea și amprenta fiecărei colecții (vezi src/store.py)
+_remote = {"versions": {}, "hashes": {}}
 
-_writer = None  # scrierea în Supabase, dacă e configurat (vezi src/store.py)
+
+def use_supabase() -> bool:
+    return os.environ.get("CUTIA_PERSIST", "1") != "0" and store.enabled()
 
 
 def load_local() -> dict:
@@ -220,36 +233,89 @@ def load_local() -> dict:
     return {}
 
 
+def _fingerprint(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _dump(value) -> str:
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
+
+
+def sync_in():
+    """Aduce din Supabase doar colecțiile schimbate de altă copie a serverului."""
+    rows = store.sync(_remote["versions"])
+    with _lock:
+        for row in rows:
+            if row["changed"]:
+                db[row["name"]] = row["data"]
+                _remote["hashes"][row["name"]] = _fingerprint(_dump(row["data"]))
+            _remote["versions"][row["name"]] = row["version"]
+
+
+def pending_changes() -> dict:
+    """Colecțiile schimbate în memorie față de ce e în Supabase: {nume: (date, amprentă)}."""
+    with _lock:
+        dumps = {k: _dump(v) for k, v in db.items()}
+    out = {}
+    for k, text in dumps.items():
+        h = _fingerprint(text)
+        if _remote["hashes"].get(k) != h:
+            out[k] = (json.loads(text), h)
+    return out
+
+
+def discard(names):
+    """Uită schimbările locale nescrise: la următoarea sincronizare luăm varianta din Supabase."""
+    with _lock:
+        for k in names:
+            _remote["versions"].pop(k, None)
+            _remote["hashes"].pop(k, None)
+            if k in DEFAULTS:
+                db[k] = copy.deepcopy(DEFAULTS[k])
+            else:
+                db.pop(k, None)
+
+
+def commit() -> bool:
+    """Scrie în Supabase ce s-a schimbat. False = altcineva a scris între timp (reluăm cererea)."""
+    changes = pending_changes()
+    if not changes:
+        return True
+    res = store.commit([{"name": k, "version": _remote["versions"].get(k, 0), "data": data}
+                        for k, (data, _h) in changes.items()])
+    if not res.get("ok"):
+        discard(changes)
+        return False
+    with _lock:
+        for k, (_data, h) in changes.items():
+            _remote["versions"][k] = res["versions"][k]
+            _remote["hashes"][k] = h
+    return True
+
+
 def load_db():
-    global _writer
-    if os.environ.get("CUTIA_PERSIST", "1") != "0" and store.enabled():
+    if use_supabase():
         # Cu Supabase nu pornim niciodată cu date goale: dacă nu răspunde, serverul nu pornește
-        # (gazda îl repornește), ca să nu suprascriem datele bune cu nimic
         for attempt in range(3):
             try:
-                remote = store.load()
+                sync_in()
                 break
             except store.StoreError as err:
                 if attempt == 2:
                     raise RuntimeError(f"Supabase nu răspunde ({err}). Verifică SUPABASE_URL, SUPABASE_SECRET_KEY și supabase/schema.sql.")
-                time.sleep(2)
-        _writer = store.Writer(db, _lock)
-        if remote:
-            db.update(remote)
-            _writer.remember()
-        else:
-            # Prima pornire cu Supabase: mutăm automat datele locale, dacă există
+                time.sleep(1)
+        # Prima pornire cu Supabase: mutăm automat datele locale, dacă există (doar local, nu pe Vercel)
+        if not _remote["versions"] and not SERVERLESS:
             db.update(load_local())
-            _writer.mark()
+            commit()
         return
-    db.update(load_local())
+    if not SERVERLESS:
+        db.update(load_local())
 
 
 def save_db():
-    if os.environ.get("CUTIA_PERSIST", "1") == "0":
-        return
-    if _writer is not None:
-        _writer.mark()
+    """Cu Supabase, scrierea se face la finalul cererii (vezi SyncMiddleware); altfel, în fișier."""
+    if os.environ.get("CUTIA_PERSIST", "1") == "0" or use_supabase() or SERVERLESS:
         return
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
     # Scriem într-un fișier temporar și apoi îl înlocuim dintr-o mișcare:
@@ -257,6 +323,80 @@ def save_db():
     tmp = DATA_FILE.with_name(f"{DATA_FILE.name}.{uuid.uuid4().hex}.tmp")
     tmp.write_text(json.dumps(db, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, DATA_FILE)
+
+
+class SyncMiddleware:
+    """Pentru fiecare cerere /api: citește ce s-a schimbat în Supabase, rulează cererea,
+    scrie ce s-a schimbat. Dacă altă copie a serverului a scris între timp, reia cererea
+    pe datele noi (de maxim 4 ori), ca nimic să nu se piardă."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not scope["path"].startswith("/api/"):
+            return await self.app(scope, receive, send)
+        if SERVERLESS and not use_supabase():
+            # Pe Vercel nu avem disc: fără Supabase datele s-ar pierde, deci spunem clar ce lipsește
+            response = JSONResponse({"detail": msg_for(scope, "no_storage")}, status_code=503)
+            return await response(scope, receive, send)
+        if not use_supabase():
+            return await self.app(scope, receive, send)
+        body, more = b"", True
+        while more:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            body += message.get("body", b"")
+            more = message.get("more_body", False)
+        for attempt in range(4):
+            try:
+                await run_in_threadpool(sync_in)
+            except store.StoreError:
+                response = JSONResponse({"detail": msg_for(scope, "storage_down")}, status_code=503)
+                return await response(scope, receive, send)
+            sent, done, given = [], asyncio.Event(), False
+
+            async def replay():
+                nonlocal given
+                if not given:
+                    given = True
+                    return {"type": "http.request", "body": body, "more_body": False}
+                await done.wait()
+                return {"type": "http.disconnect"}
+
+            async def capture(message):
+                sent.append(message)
+                if message["type"] == "http.response.body" and not message.get("more_body"):
+                    done.set()
+
+            try:
+                await self.app(scope, replay, capture)
+            except Exception:
+                discard(list(pending_changes()))  # o eroare nu lasă date pe jumătate în memorie
+                raise
+            try:
+                ok = await run_in_threadpool(commit)
+            except store.StoreError:
+                discard(list(pending_changes()))
+                response = JSONResponse({"detail": msg_for(scope, "storage_down")}, status_code=503)
+                return await response(scope, receive, send)
+            if ok:
+                for message in sent:
+                    await send(message)
+                return
+            await asyncio.sleep(random.uniform(0.05, 0.25) * (attempt + 1))
+        response = JSONResponse({"detail": msg_for(scope, "storage_busy")}, status_code=503)
+        await response(scope, receive, send)
+
+
+def msg_for(scope, key: str) -> str:
+    """Mesajul în limba cererii (din antetul X-Lang), înainte să ajungă la language_middleware."""
+    lang = dict(scope.get("headers") or []).get(b"x-lang", b"ro").decode("latin-1")
+    return MESSAGES[key][ai.LANGS.index(lang) if lang in ai.LANGS else 0]
+
+
+app.add_middleware(SyncMiddleware)
 
 
 # Fișierele încărcate (teme, capturi Demo Day): nume aleatoriu, conținutul doar prin API
@@ -312,25 +452,24 @@ load_db()
 DEMO = os.environ.get("CUTIA_DEMO", "0") == "1"
 DEMO_PASSWORD = "demo-cutia"
 DEMO_ACCOUNTS = [
-    {"email": "trainer@demo.cutia", "name": "Trainer Demo", "role": "trainer"},
-    {"email": "ana@demo.cutia", "name": "Ana Demo", "role": "student"},
-    {"email": "mihai@demo.cutia", "name": "Mihai Demo", "role": "student"},
+    {"login": "trainer@demo.cutia", "name": "Trainer Demo", "role": "trainer"},
+    {"login": "ana", "name": "Ana Demo", "role": "student"},
+    {"login": "mihai", "name": "Mihai Demo", "role": "student"},
 ]
 
 
 def seed_demo():
-    import hashlib as _h
-    import secrets as _s
     stamp = now()
     for acc in DEMO_ACCOUNTS:
-        salt = _s.token_bytes(16)
-        db["users"][acc["email"]] = {**acc, "salt": salt.hex(), "created_at": stamp,
-                                     "hash": _h.pbkdf2_hmac("sha256", DEMO_PASSWORD.encode(), salt, 200_000).hex()}
+        salt = secrets.token_bytes(16)
+        field = "email" if acc["role"] == "trainer" else "username"
+        db["users"][acc["login"]] = {"name": acc["name"], "role": acc["role"], field: acc["login"], "salt": salt.hex(),
+                                     "created_at": stamp, "gen": 0, "hash": hash_password(DEMO_PASSWORD, salt)}
     ana, mihai = DEMO_ACCOUNTS[1], DEMO_ACCOUNTS[2]
 
     def question(author, text, category, answer=None, faq_ok=False):
         db["questions"].append({"id": next_id(), "text": text, "category": category, "anonymous": False, "faq_ok": faq_ok,
-                                "author": author["name"], "author_key": author["email"], "created_at": stamp,
+                                "author": author["name"], "author_key": author["login"], "created_at": stamp,
                                 "answer": answer, "answered_at": stamp if answer else None, "ai_answer": None, "ai_answered_at": None})
 
     question(ana, "De ce nu se salvează formularul meu după refresh?", "debugging",
@@ -341,58 +480,75 @@ def seed_demo():
 
     def proposal(author, title, description, audience, voters, decision="new", note=None):
         db["proposals"].append({"id": next_id(), "title": title, "description": description, "audience": audience,
-                                "author": author["name"], "author_key": author["email"], "created_at": stamp,
+                                "author": author["name"], "author_key": author["login"], "created_at": stamp,
                                 "chosen": decision == "chosen", "chosen_at": stamp if decision == "chosen" else None,
                                 "decision": decision, "trainer_note": note, "voters": voters})
 
     proposal(ana, "Bingo de prompturi", "Un joc în care clasa bifează tehnici de prompting pe măsură ce le folosește la oră.",
-             "Studenții, în timpul orei", [mihai["email"]], "discussing", "Îmi place. Facem prima versiune data viitoare?")
+             "Studenții, în timpul orei", [mihai["login"]], "discussing", "Îmi place. Facem prima versiune data viitoare?")
     proposal(mihai, "Jurnal de erori", "Fiecare student salvează erorile întâlnite și cum le-a rezolvat, ca să le găsească ușor.",
-             "Studenții și trainerul", [ana["email"]], "chosen")
+             "Studenții și trainerul", [ana["login"]], "chosen")
     proposal(ana, "Cronometru de pauze", "Un cronometru care amintește clasei să ia pauză.", "Toată clasa", [])
     save_db()
 
 
-if DEMO and not supa.enabled() and not db["users"]:
-    seed_demo()
-
 # ---------------------------------------------------------------------------
-# Conturi: email + parolă (sau Google, dacă e configurat GOOGLE_CLIENT_ID).
-# Trainerul e recunoscut după email (TRAINER_EMAILS) sau după codul de
-# trainer dat la crearea contului. Dacă e setat CLASS_CODE, doar cine are
-# codul clasei își poate face cont.
+# Conturi: toată lumea intră cu email + parolă. Oricine își poate face cont
+# (POST /api/register) și devine student; trainer e doar emailul din
+# TRAINER_EMAILS (implicit Stoichin.radu23@gmail.com). Ca nimeni să nu-și
+# însușească emailul trainerului, contul lui cere TRAINER_CODE (dacă e setat)
+# sau, fără cod, merge doar cât timp nu există încă un trainer.
+# Trainerul poate face și el conturi de student (utilizator + parolă).
 # ---------------------------------------------------------------------------
 
-TRAINER_EMAILS = {e.strip().lower() for e in os.environ.get("TRAINER_EMAILS", "").split(",") if e.strip()}
-CLASS_CODE = os.environ.get("CLASS_CODE", "").strip()
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+DEFAULT_TRAINER_EMAIL = "stoichin.radu23@gmail.com"
+TRAINER_EMAILS = {e.strip().lower() for e in os.environ.get("TRAINER_EMAILS", DEFAULT_TRAINER_EMAIL).split(",") if e.strip()}
+REGISTRATION_OPEN = os.environ.get("CUTIA_REGISTRATION", "1") != "0"  # 0 = închizi înscrierile după ce intră clasa
 MIN_PASSWORD = 8
 MAX_FAILED = 5          # încercări greșite permise…
 LOCK_SECONDS = 10 * 60  # …într-o fereastră de 10 minute
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,31}$")
 _failed: dict[str, list] = {}
+
+
+def hash_password(password: str, salt: bytes) -> str:
+    return hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 200_000).hex()
+
+
+if DEMO and not store.enabled() and not db["users"]:
+    seed_demo()
+
+
+class SetupIn(BaseModel):
+    name: str = Field(min_length=1, max_length=60)
+    email: str = Field(min_length=3, max_length=200)
+    password: str = Field(max_length=200)
+    trainer_code: str = Field("", max_length=100)
 
 
 class RegisterIn(BaseModel):
     name: str = Field(min_length=1, max_length=60)
     email: str = Field(min_length=3, max_length=200)
     password: str = Field(max_length=200)
-    class_code: Optional[str] = Field(None, max_length=100)
-    trainer_code: Optional[str] = Field(None, max_length=100)
+    trainer_code: str = Field("", max_length=100)
 
 
 class LoginIn(BaseModel):
-    email: str = Field(min_length=3, max_length=200)
+    login: Optional[str] = Field(None, max_length=200)   # emailul trainerului sau utilizatorul studentului
+    email: Optional[str] = Field(None, max_length=200)   # nume vechi al câmpului, acceptat în continuare
     password: str = Field(max_length=200)
 
 
-class GoogleIn(BaseModel):
-    credential: str = Field(min_length=10, max_length=5000)
-    class_code: Optional[str] = Field(None, max_length=100)
+class StudentIn(BaseModel):
+    username: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=60)
+    password: str = Field(max_length=200)
 
 
-def hash_password(password: str, salt: bytes) -> str:
-    return hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 200_000).hex()
+class StudentEditIn(BaseModel):
+    name: Optional[str] = Field(None, max_length=60)
+    password: Optional[str] = Field(None, max_length=200)
 
 
 def same(a: str, b: str) -> bool:
@@ -406,39 +562,102 @@ def clean_email(email: str) -> str:
     return email
 
 
-def check_class_code(code: Optional[str]):
-    if CLASS_CODE and not same((code or "").strip(), CLASS_CODE):
-        fail(403, "wrong_class_code")
+def clean_username(username: str) -> str:
+    username = (username or "").strip().lower()
+    if not USERNAME_RE.match(username):
+        fail(400, "bad_username")
+    return username
+
+
+def check_password(password: str):
+    if len(password or "") < MIN_PASSWORD:
+        fail(400, "short_password")
+
+
+def set_password(account: dict, password: str):
+    salt = secrets.token_bytes(16)
+    account.update(salt=salt.hex(), hash=hash_password(password, salt))
+    account["gen"] = account.get("gen", 0) + 1  # sesiunile vechi ale contului se închid
 
 
 def valid_trainer_code(code: Optional[str]) -> bool:
     return bool(TRAINER_CODE and code and same(code.strip(), TRAINER_CODE))
 
 
-def role_for(email: str, trainer_code: Optional[str] = None) -> str:
-    if email in TRAINER_EMAILS or valid_trainer_code(trainer_code):
-        return "trainer"
-    return "student"
+def has_trainer() -> bool:
+    return any(u.get("role") == "trainer" for u in db["users"].values())
 
 
-def throttle(email: str):
+def throttle(key: str):
     """Blochează temporar contul după prea multe parole greșite."""
-    recent = [t for t in _failed.get(email, []) if t > datetime.now(timezone.utc).timestamp() - LOCK_SECONDS]
-    _failed[email] = recent
+    recent = [t for t in _failed.get(key, []) if t > datetime.now(timezone.utc).timestamp() - LOCK_SECONDS]
+    _failed[key] = recent
     if len(recent) >= MAX_FAILED:
         fail(429, "too_many_attempts")
 
 
-def start_session(user: dict) -> dict:
-    token = secrets.token_urlsafe(32)
-    expires = datetime.now(timezone.utc).timestamp() + SESSION_DAYS * 86400
-    # Sesiunea rămâne validă și după repornirea serverului; „Ieși” o șterge
-    db["sessions"][token_hash(token)] = {
-        "name": user["name"], "role": user["role"], "key": user["email"],
-        "expires": datetime.fromtimestamp(expires, timezone.utc).isoformat(timespec="seconds"),
-    }
-    save_db()
-    return {"token": token, "name": user["name"], "role": user["role"]}
+def throttle_limit(key: str, limit: int, window: int):
+    recent = [t for t in _failed.get(key, []) if t > datetime.now(timezone.utc).timestamp() - window]
+    _failed[key] = recent
+    if len(recent) >= limit:
+        fail(429, "too_many_attempts")
+
+
+def failed_attempt(key: str):
+    _failed.setdefault(key, []).append(datetime.now(timezone.utc).timestamp())
+
+
+# Sesiuni: tokenul e semnat de server (HMAC), deci nu trebuie scris în baza de date la
+# fiecare intrare (pe Vercel, 20 de studenți care intră deodată nu se calcă pe picioare).
+# „Ieși” trece tokenul pe lista de tokenuri închise; o parolă nouă le închide pe toate.
+
+def _b64(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _unb64(text: str) -> bytes:
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def session_secret() -> bytes:
+    explicit = os.environ.get("SESSION_SECRET", "").strip()
+    if explicit:
+        return explicit.encode()
+    if store.enabled():
+        # Derivat din cheia secretă Supabase: e deja doar pe server, deci nu mai cerem încă o variabilă
+        return hashlib.sha256(b"cutia-session:" + store.secret().encode()).digest()
+    with _lock:
+        meta = db.setdefault("meta", {})
+        if not meta.get("session_secret"):
+            meta["session_secret"] = secrets.token_hex(32)
+            save_db()
+        return bytes.fromhex(meta["session_secret"])
+
+
+def make_token(key: str, account: dict) -> str:
+    expires = int(datetime.now(timezone.utc).timestamp()) + SESSION_DAYS * 86400
+    payload = _b64(json.dumps({"k": key, "g": account.get("gen", 0), "x": expires, "n": secrets.token_hex(8)}).encode())
+    sig = _b64(hmac.new(session_secret(), payload.encode(), hashlib.sha256).digest())
+    return f"{payload}.{sig}"
+
+
+def read_token(token: str) -> Optional[dict]:
+    try:
+        payload, sig = token.split(".")
+        good = _b64(hmac.new(session_secret(), payload.encode(), hashlib.sha256).digest())
+        if not same(sig, good):
+            return None
+        data = json.loads(_unb64(payload))
+    except (ValueError, TypeError):
+        return None
+    if data.get("x", 0) < datetime.now(timezone.utc).timestamp():
+        return None
+    return data
+
+
+def start_session(key: str) -> dict:
+    account = db["users"][key]
+    return {"token": make_token(key, account), "name": account["name"], "role": account["role"]}
 
 
 def token_hash(token: str) -> str:
@@ -447,10 +666,11 @@ def token_hash(token: str) -> str:
 
 def current_user(authorization: Optional[str] = Header(None)) -> dict:
     token = (authorization or "").removeprefix("Bearer ").strip()
-    user = db["sessions"].get(token_hash(token)) if token else None
-    if not user or user.get("expires", "") < now():
+    data = read_token(token) if token else None
+    account = db["users"].get(data["k"]) if data else None
+    if not account or account.get("gen", 0) != data.get("g") or token_hash(token) in db.get("revoked", {}):
         fail(401, "login_again")
-    return user
+    return {"name": account["name"], "role": account["role"], "key": data["k"]}
 
 
 def require_trainer(user: dict = Depends(current_user)) -> dict:
@@ -468,8 +688,7 @@ def require_student(user: dict = Depends(current_user)) -> dict:
 @app.get("/api/health")
 def health():
     """Pentru hosting: serverul răspunde (fără date despre nimeni)."""
-    return {"ok": True, "storage": "supabase" if _writer is not None else "file",
-            "storage_error": bool(_writer and _writer.last_error)}
+    return {"ok": True, "storage": "supabase" if use_supabase() else "file", "serverless": SERVERLESS}
 
 
 @app.get("/")
@@ -477,219 +696,136 @@ def root():
     return RedirectResponse(url="/static/index.html")
 
 
-@app.post("/api/register", status_code=201)
-def register(body: RegisterIn, request: Request):
+@app.post("/api/setup", status_code=201)
+def setup_trainer(body: SetupIn):
+    """Contul de trainer: email + parolă, creat cu codul de trainer (TRAINER_CODE)."""
+    if not TRAINER_CODE:
+        fail(403, "setup_off")
+    throttle("setup")  # codul de trainer nu se poate ghici încercând la nesfârșit
+    if not valid_trainer_code(body.trainer_code):
+        failed_attempt("setup")
+        fail(403, "wrong_code")
     name = body.name.strip()
     if not name:
         fail(400, "need_name")
     email = clean_email(body.email)
-    if len(body.password) < MIN_PASSWORD:
-        fail(400, "short_password")
-    if body.trainer_code and body.trainer_code.strip() and not valid_trainer_code(body.trainer_code):
-        fail(403, "wrong_code")
-    role = role_for(email, body.trainer_code)
-    if role == "student":
-        check_class_code(body.class_code)
-    if supa.enabled():
-        return supabase_register(body, name, email, request)
+    if TRAINER_EMAILS and email not in TRAINER_EMAILS:
+        fail(403, "not_trainer_email")
+    check_password(body.password)
     with _lock:
         if email in db["users"]:
             fail(409, "email_taken")
-        salt = secrets.token_bytes(16)
-        db["users"][email] = {"name": name, "email": email, "role": role, "salt": salt.hex(),
-                              "hash": hash_password(body.password, salt), "created_at": now()}
-        return start_session(db["users"][email])
+        db["users"][email] = {"name": name, "email": email, "role": "trainer", "created_at": now(), "gen": 0}
+        set_password(db["users"][email], body.password)
+        save_db()
+        return start_session(email)
+
+
+@app.post("/api/register", status_code=201)
+def register(body: RegisterIn, request: Request):
+    """Cont nou cu email + parolă. Emailul trainerului → trainer; oricare altul → student."""
+    name = body.name.strip()
+    if not name:
+        fail(400, "need_name")
+    email = clean_email(body.email)
+    check_password(body.password)
+    is_trainer = email in TRAINER_EMAILS
+    if is_trainer:
+        if TRAINER_CODE:
+            throttle("setup")  # codul de trainer nu se poate ghici încercând la nesfârșit
+            if not body.trainer_code.strip():
+                fail(428, "need_trainer_code")
+            if not valid_trainer_code(body.trainer_code):
+                failed_attempt("setup")
+                fail(403, "wrong_code")
+        elif has_trainer():
+            fail(409, "email_taken")
+    elif not REGISTRATION_OPEN:
+        fail(403, "registration_closed")
+    else:
+        # Fără conturi în masă de pe aceeași adresă (20 pe oră ajung pentru o clasă)
+        ip = "reg:" + (request.client.host if request.client else "?")
+        throttle_limit(ip, 20, 3600)
+    with _lock:
+        if email in db["users"]:
+            fail(409, "email_taken")
+        db["users"][email] = {"name": name, "email": email, "role": "trainer" if is_trainer else "student",
+                              "created_at": now(), "gen": 0}
+        set_password(db["users"][email], body.password)
+        save_db()
+        if not is_trainer:
+            failed_attempt("reg:" + (request.client.host if request.client else "?"))
+        return start_session(email)
 
 
 @app.post("/api/login")
 def login(body: LoginIn):
-    email = clean_email(body.email)
-    throttle(email)
-    if supa.enabled():
-        try:
-            token = supa.sign_in(email, body.password)
-        except supa.SupabaseError as err:
-            if err.code == "invalid":
-                _failed.setdefault(email, []).append(datetime.now(timezone.utc).timestamp())
-            supabase_fail(err)
-        _failed.pop(email, None)
-        return supabase_account(supabase_user(token))
-    user = db["users"].get(email)
-    # Același mesaj pentru email greșit și parolă greșită: nu dezvăluim cine are cont
-    ok = bool(user and user.get("hash")) and same(
-        hash_password(body.password, bytes.fromhex(user["salt"])), user["hash"])
+    ident = (body.login or body.email or "").strip().lower()
+    throttle(ident)
+    account = db["users"].get(ident)
+    # Același mesaj pentru utilizator greșit și parolă greșită: nu dezvăluim cine are cont
+    ok = bool(account and account.get("hash")) and same(
+        hash_password(body.password, bytes.fromhex(account["salt"])), account["hash"])
     if not ok:
-        _failed.setdefault(email, []).append(datetime.now(timezone.utc).timestamp())
+        failed_attempt(ident)
         fail(401, "wrong_login")
-    _failed.pop(email, None)
+    _failed.pop(ident, None)
+    return start_session(ident)
+
+
+@app.post("/api/students", status_code=201)
+def create_student(body: StudentIn, user: dict = Depends(require_trainer)):
+    """Trainerul face contul unui student: utilizator, nume afișat și parolă."""
+    username = clean_username(body.username)
+    name = body.name.strip()
+    if not name:
+        fail(400, "need_name")
+    check_password(body.password)
     with _lock:
-        user["role"] = role_for(email) if user["role"] == "student" else user["role"]
-        return start_session(user)
-
-
-@app.post("/api/auth/google")
-def google_login(body: GoogleIn):
-    """Intrare cu contul Google: verificăm pe server tokenul semnat de Google."""
-    if not GOOGLE_CLIENT_ID:
-        fail(404, "google_off")
-    try:
-        from google.auth.transport import requests as google_requests
-        from google.oauth2 import id_token
-        info = id_token.verify_oauth2_token(body.credential, google_requests.Request(), GOOGLE_CLIENT_ID)
-    except Exception:
-        fail(401, "google_failed")
-    if not info.get("email_verified"):
-        fail(401, "google_failed")
-    email = clean_email(info.get("email", ""))
-    with _lock:
-        user = db["users"].get(email)
-        if user is None:
-            role = role_for(email)
-            if role == "student":
-                check_class_code(body.class_code)
-            user = db["users"][email] = {"name": (info.get("name") or email.split("@")[0])[:60], "email": email,
-                                         "role": role, "google": True, "created_at": now()}
-        return start_session(user)
-
-
-# ---------------------------------------------------------------------------
-# Supabase Auth (dacă sunt setate SUPABASE_URL și SUPABASE_ANON_KEY): parolele,
-# confirmarea emailului, resetarea și Google merg prin Supabase. Orice token
-# primit din browser îl verificăm la Supabase înainte să deschidem o sesiune.
-# ---------------------------------------------------------------------------
-
-RECOVER_LIMIT = 3  # emailuri de resetare per adresă, la 10 minute
-_recover_sent: dict[str, list] = {}
-
-
-class SupabaseTokenIn(BaseModel):
-    access_token: str = Field(min_length=10, max_length=5000)
-    class_code: Optional[str] = Field(None, max_length=100)
-
-
-class RecoverIn(BaseModel):
-    email: str = Field(min_length=3, max_length=200)
-
-
-class NewPasswordIn(BaseModel):
-    access_token: str = Field(min_length=10, max_length=5000)
-    password: str = Field(max_length=200)
-
-
-def app_url(request: Request) -> str:
-    """Unde ne întoarce linkul din email (trebuie adăugat și în Supabase → Redirect URLs)."""
-    return str(request.base_url).rstrip("/") + "/static/index.html"
-
-
-def supabase_fail(err: "supa.SupabaseError"):
-    key = {"invalid": "wrong_login", "unconfirmed": "confirm_email_first", "exists": "email_taken",
-           "weak": "weak_password"}.get(err.code, "auth_down")
-    fail({"wrong_login": 401, "confirm_email_first": 403, "email_taken": 409, "weak_password": 400}.get(key, 503), key)
-
-
-def supabase_user(token: str) -> dict:
-    try:
-        return supa.get_user(token)
-    except supa.SupabaseError as err:
-        if err.code == "invalid":
-            fail(401, "link_expired")
-        supabase_fail(err)
-
-
-def supabase_account(sb_user: dict, class_code: Optional[str] = None) -> dict:
-    """Leagă contul Supabase de contul nostru (același email = aceleași date) și deschide sesiunea."""
-    email = clean_email(sb_user["email"])
-    provider = supa.provider(sb_user)
-    # TRAINER_EMAILS contează doar dacă emailul e dovedit (Google sau confirmare pe email);
-    # altfel oricine și-ar putea face cont cu emailul trainerului
-    trusted = provider == "google" or supa.emails_are_verified()
-    with _lock:
-        user = db["users"].get(email)
-        pending = db.setdefault("supabase_pending", {}).get(email)
-        if user is None:
-            role = "trainer" if (pending or {}).get("role") == "trainer" or (trusted and email in TRAINER_EMAILS) else "student"
-            if role == "student" and not (pending or {}).get("class_ok"):
-                check_class_code(class_code)
-            name = (pending or {}).get("name") or supa.display_name(sb_user)
-            user = db["users"][email] = {"name": name, "email": email, "role": role, "created_at": now()}
-        elif user["role"] == "student" and trusted and email in TRAINER_EMAILS:
-            user["role"] = "trainer"
-        db["supabase_pending"].pop(email, None)
-        user["supabase"] = "email" if provider == "email" else provider
-        return start_session(user)
-
-
-def supabase_register(body: RegisterIn, name: str, email: str, request: Request) -> dict:
-    # Ce am verificat aici (codul clasei, codul de trainer) ținem minte până la confirmarea emailului
-    with _lock:
-        pending = db.setdefault("supabase_pending", {})
-        week_ago = datetime.fromtimestamp(datetime.now(timezone.utc).timestamp() - 7 * 86400, timezone.utc).isoformat(timespec="seconds")
-        for old in [e for e, p in pending.items() if p.get("at", "") < week_ago]:
-            pending.pop(old)
-        is_trainer = valid_trainer_code(body.trainer_code)
-        pending[email] = {
-            "name": name, "role": "trainer" if is_trainer else "student",
-            "class_ok": is_trainer or not CLASS_CODE or same((body.class_code or "").strip(), CLASS_CODE),
-            "at": now()}
+        if username in db["users"]:
+            fail(409, "username_taken")
+        db["users"][username] = {"name": name, "username": username, "role": "student",
+                                 "created_at": now(), "created_by": user["key"], "gen": 0}
+        set_password(db["users"][username], body.password)
         save_db()
-    try:
-        token = supa.sign_up(email, body.password, name, app_url(request))
-    except supa.SupabaseError as err:
-        if err.code != "exists":
-            supabase_fail(err)
-        # Contul există deja la Supabase (de exemplu creat din alt loc): încercăm să intrăm cu parola dată
-        try:
-            token = supa.sign_in(email, body.password)
-        except supa.SupabaseError as err2:
-            supabase_fail(supa.SupabaseError("exists" if err2.code == "invalid" else err2.code))
-    if not token:
-        return {"confirm_email": True, "email": email}
-    return supabase_account(supabase_user(token), body.class_code)
+    return {"key": username, "username": username, "name": name}
 
 
-@app.post("/api/auth/supabase")
-def supabase_login(body: SupabaseTokenIn):
-    """Întoarcerea din linkul de confirmare sau de la Google (prin Supabase)."""
-    if not supa.enabled():
-        fail(404, "supabase_off")
-    return supabase_account(supabase_user(body.access_token), body.class_code)
-
-
-@app.post("/api/auth/supabase/recover")
-def supabase_recover(body: RecoverIn, request: Request):
-    """Trimite linkul de resetare. Răspundem la fel dacă emailul are cont sau nu."""
-    if not supa.enabled():
-        fail(404, "supabase_off")
-    email = clean_email(body.email)
-    cutoff = datetime.now(timezone.utc).timestamp() - LOCK_SECONDS
-    sent = [t for t in _recover_sent.get(email, []) if t > cutoff]
-    if len(sent) >= RECOVER_LIMIT:
-        fail(429, "too_many_attempts")
-    _recover_sent[email] = sent + [datetime.now(timezone.utc).timestamp()]
-    try:
-        supa.recover(email, app_url(request))
-    except supa.SupabaseError as err:
-        supabase_fail(err)
-    return {"ok": True}
-
-
-@app.post("/api/auth/supabase/new-password")
-def supabase_new_password(body: NewPasswordIn):
-    """Parola nouă, din linkul de resetare primit pe email; apoi intri direct."""
-    if not supa.enabled():
-        fail(404, "supabase_off")
-    if len(body.password) < MIN_PASSWORD:
-        fail(400, "short_password")
-    sb_user = supabase_user(body.access_token)
-    try:
-        supa.update_password(body.access_token, body.password)
-    except supa.SupabaseError as err:
-        supabase_fail(err)
-    account = supabase_account(sb_user)
-    with _lock:
-        db["users"][clean_email(sb_user["email"])]["supabase"] = "email"  # acum are și parolă
-        save_db()
+def student_account(student_key: str) -> dict:
+    account = db["users"].get(student_key)
+    if not account or account.get("role") != "student":
+        fail(404, "no_student")
     return account
+
+
+@app.patch("/api/students/{student_key}")
+def edit_student(student_key: str, body: StudentEditIn, user: dict = Depends(require_trainer)):
+    """Trainerul schimbă numele afișat sau pune o parolă nouă (studentul iese de peste tot)."""
+    account = student_account(student_key)
+    name = (body.name or "").strip()
+    if body.name is not None and not name:
+        fail(400, "need_name")
+    if body.password is not None:
+        check_password(body.password)
+    with _lock:
+        if name:
+            account["name"] = name
+        if body.password is not None:
+            set_password(account, body.password)
+        save_db()
+    return {"key": student_key, "username": student_key, "name": account["name"]}
+
+
+@app.delete("/api/students/{student_key}")
+def delete_student(student_key: str, user: dict = Depends(require_trainer)):
+    """Șterge contul (studentul nu mai poate intra). Ce a scris rămâne, cu numele lui."""
+    student_account(student_key)
+    with _lock:
+        db["users"].pop(student_key, None)
+        db["prefs"].pop(student_key, None)
+        db.setdefault("push", {}).pop(student_key, None)
+        save_db()
+    return {"ok": True}
 
 
 class PasswordIn(BaseModel):
@@ -699,61 +835,32 @@ class PasswordIn(BaseModel):
 
 @app.post("/api/me/password")
 def change_password(body: PasswordIn, user: dict = Depends(current_user)):
-    """Schimbă parola. Conturile create cu Google își pot pune o parolă fără cea veche."""
+    """Schimbă parola (cu parola actuală). Celelalte dispozitive ies din cont."""
     account = db["users"].get(user["key"])
     if account is None:
         fail(401, "login_again")
-    if supa.enabled():
-        # Parola stă la Supabase: o schimbăm cu un token obținut din parola actuală
-        if len(body.new) < MIN_PASSWORD:
-            fail(400, "short_password")
-        throttle(account["email"])
-        try:
-            token = supa.sign_in(account["email"], body.current or "")
-        except supa.SupabaseError as err:
-            if err.code == "invalid":
-                _failed.setdefault(account["email"], []).append(datetime.now(timezone.utc).timestamp())
-                fail(403, "wrong_current")
-            supabase_fail(err)
-        try:
-            supa.update_password(token, body.new)
-        except supa.SupabaseError as err:
-            supabase_fail(err)
-        return {"ok": True}
+    throttle(user["key"])
     if account.get("hash") and not same(hash_password(body.current or "", bytes.fromhex(account["salt"])), account["hash"]):
+        failed_attempt(user["key"])
         fail(403, "wrong_current")
-    if len(body.new) < MIN_PASSWORD:
-        fail(400, "short_password")
+    check_password(body.new)
     with _lock:
-        salt = secrets.token_bytes(16)
-        account.update(salt=salt.hex(), hash=hash_password(body.new, salt))
+        set_password(account, body.new)
         save_db()
-    return {"ok": True}
+        return {"ok": True, **start_session(user["key"])}
 
 
 class ResetOut(BaseModel):
-    temporary_password: Optional[str] = None
-    email_sent: bool = False
+    temporary_password: str
 
 
 @app.post("/api/students/{student_key}/reset-password")
-def reset_password(student_key: str, request: Request, user: dict = Depends(require_trainer)) -> ResetOut:
-    """Trainerul generează o parolă temporară pentru un student care a uitat-o.
-    Cu Supabase, studentul primește în schimb un link de resetare pe email."""
-    if student_key not in known_students():
-        fail(404, "no_student")
-    if supa.enabled():
-        try:
-            supa.recover(student_key, app_url(request))
-        except supa.SupabaseError as err:
-            supabase_fail(err)
-        return ResetOut(email_sent=True)
+def reset_password(student_key: str, user: dict = Depends(require_trainer)) -> ResetOut:
+    """Trainerul generează o parolă temporară pentru un student care a uitat-o."""
+    account = student_account(student_key)
     temp = secrets.token_urlsafe(9)
     with _lock:
-        salt = secrets.token_bytes(16)
-        db["users"][student_key].update(salt=salt.hex(), hash=hash_password(temp, salt))
-        # Sesiunile vechi ale studentului se închid
-        db["sessions"] = {h: sess for h, sess in db["sessions"].items() if sess["key"] != student_key}
+        set_password(account, temp)
         save_db()
     return ResetOut(temporary_password=temp)
 
@@ -761,8 +868,13 @@ def reset_password(student_key: str, request: Request, user: dict = Depends(requ
 @app.post("/api/logout")
 def logout(authorization: Optional[str] = Header(None)):
     token = (authorization or "").removeprefix("Bearer ").strip()
-    with _lock:
-        if db["sessions"].pop(token_hash(token), None):
+    data = read_token(token) if token else None
+    if data:
+        with _lock:
+            stamp = datetime.now(timezone.utc).timestamp()
+            revoked = {h: x for h, x in db.setdefault("revoked", {}).items() if x > stamp}  # cele expirate nu mai contează
+            revoked[token_hash(token)] = data["x"]
+            db["revoked"] = revoked
             save_db()
     return {"ok": True}
 
@@ -775,8 +887,9 @@ class PrefsIn(BaseModel):
 @app.get("/api/me")
 def me(user: dict = Depends(current_user)):
     account = db["users"].get(user["key"], {})
-    return {"name": user["name"], "role": user["role"], "email": user["key"],
-            "has_password": account.get("supabase") == "email" if supa.enabled() else bool(account.get("hash")), "prefs": db["prefs"].get(user["key"], {})}
+    return {"name": user["name"], "role": user["role"], "login": user["key"], "email": account.get("email"),
+            "username": account.get("username"), "has_password": bool(account.get("hash")),
+            "prefs": db["prefs"].get(user["key"], {})}
 
 
 @app.patch("/api/me")
@@ -793,11 +906,10 @@ def update_prefs(body: PrefsIn, user: dict = Depends(current_user)):
 
 @app.get("/api/config")
 def config():
-    """Ce poate interfața: dacă AI-ul e disponibil și ce topicuri există."""
-    # Adresa Supabase e publică (o vede oricum browserul la Google); anon key rămâne pe server
-    sb = {"url": supa.url(), "google": supa.google_enabled()} if supa.enabled() else None
-    return {"ai": ai.available(), "topics": TOPICS, "google_client_id": None if sb else (GOOGLE_CLIENT_ID or None),
-            "class_code_required": bool(CLASS_CODE), "supabase": sb, "push_key": webpush.public_key() if webpush.enabled() else None,
+    """Ce poate interfața: AI-ul, topicurile și dacă trainerul trebuie să-și facă întâi contul."""
+    return {"ai": ai.available(), "topics": TOPICS, "needs_setup": not has_trainer(), "setup_enabled": bool(TRAINER_CODE),
+            "registration": REGISTRATION_OPEN,
+            "push_key": webpush.public_key() if webpush.enabled() else None, "max_upload_mb": MAX_UPLOAD_MB,
             "demo": {"accounts": DEMO_ACCOUNTS, "password": DEMO_PASSWORD} if DEMO else None}
 
 
@@ -957,7 +1069,9 @@ REVIEW_STATUSES = ["sent", "received", "reviewed", "redo"]
 # „Gata când” din fișa temei
 CHECKLIST = ["features", "privacy", "ai_consent", "github_readme", "no_keys", "trainer_access"]
 MAX_FILES = 5
-MAX_FILE_BYTES = 10 * 1024 * 1024
+# Pe Vercel o cerere are maxim ~4,5 MB, deci toate fișierele unei predări încap în 4 MB
+MAX_UPLOAD_MB = 4 if SERVERLESS else 10
+MAX_FILE_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 ALLOWED_EXTENSIONS = {
     ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".zip", ".txt", ".md",
     ".py", ".js", ".ts", ".html", ".css", ".json", ".csv", ".ipynb",
@@ -1031,7 +1145,7 @@ async def create_submission(
             fail(400, "bad_file_type", name)
         content = await f.read(MAX_FILE_BYTES + 1)
         if len(content) > MAX_FILE_BYTES:
-            fail(400, "file_too_big", name)
+            fail(400, "file_too_big", name, MAX_UPLOAD_MB)
         accepted.append((name, content))
 
     stored_files = []
@@ -1366,8 +1480,8 @@ class MessageIn(BaseModel):
 
 
 def known_students() -> dict:
-    """Toți studenții care au cont, după email."""
-    return {k: u["name"] for k, u in db["users"].items() if u.get("role") == "student" and u.get("email")}
+    """Toți studenții care au cont, după utilizator."""
+    return {k: u["name"] for k, u in db["users"].items() if u.get("role") == "student"}
 
 
 def thread_view(student_key: str, user: dict) -> list:
@@ -1626,7 +1740,7 @@ def give_bonus(body: BonusIn, user: dict = Depends(require_trainer)):
 @app.get("/api/students")
 def list_students(user: dict = Depends(require_trainer)):
     all_points = points.compute(db)
-    return [{"key": k, "name": n, "total": all_points.get(k, {"total": 0})["total"]}
+    return [{"key": k, "username": k, "name": n, "total": all_points.get(k, {"total": 0})["total"]}
             for k, n in sorted(known_students().items(), key=lambda kv: kv[1].casefold())]
 
 
@@ -1686,7 +1800,10 @@ def run_digest_in_background():
             _digest_state["running"] = False
     if not _digest_state["running"]:
         _digest_state["running"] = True
-        threading.Thread(target=job, daemon=True).start()
+        if SERVERLESS:
+            job()  # pe Vercel nu există fire în fundal: facem briefing-ul în cererea curentă
+        else:
+            threading.Thread(target=job, daemon=True).start()
 
 
 def digest_view(d: dict, lang: str) -> dict:
@@ -1725,7 +1842,8 @@ def get_digest(date: Optional[str] = None, user: dict = Depends(current_user)):
     d = next((x for x in digests if x["date"] == date), None) if date else (digests[-1] if digests else None)
     import time
     # Primul briefing (sau cel de azi) se face acum; dacă sursele nu merg, nu reîncercăm la fiecare vizită
-    if (d is None or (not date and digest.due(digests))) and time.time() - _digest_state["auto_at"] > 600:
+    # Pe Vercel, briefing-ul îl face Vercel Cron (/api/cron/digest) sau trainerul, nu o vizită oarecare
+    if not SERVERLESS and (d is None or (not date and digest.due(digests))) and time.time() - _digest_state["auto_at"] > 600:
         _digest_state["auto_at"] = time.time()
         run_digest_in_background()
     base = {"next_run": digest.next_run(), "generating": _digest_state["running"],
@@ -1735,6 +1853,19 @@ def get_digest(date: Optional[str] = None, user: dict = Depends(current_user)):
     view = digest_view(d, current_lang.get())
     return {**base, "digest": {"date": d["date"], "created_at": d["created_at"], "window_hours": d["window_hours"],
                                "stats": d["stats"], **view}}
+
+
+@app.get("/api/cron/digest")
+def cron_digest(authorization: Optional[str] = Header(None)):
+    """Vercel Cron, o dată pe zi (vezi vercel.json). Vercel trimite CRON_SECRET ca token."""
+    expected = os.environ.get("CRON_SECRET", "").strip()
+    if not expected or not same((authorization or "").removeprefix("Bearer ").strip(), expected):
+        raise HTTPException(status_code=401, detail="unauthorized")
+    if os.environ.get("CUTIA_DIGEST", "on") == "off":
+        return {"ok": True, "skipped": True}
+    if digest.due(db.get("digests", [])):
+        run_digest_in_background()
+    return {"ok": True}
 
 
 @app.post("/api/digest/run")
@@ -1785,7 +1916,7 @@ def repo_check(body: RepoCheckIn, user: dict = Depends(current_user)):
 
 # ---------------------------------------------------------------- Error Doctor (privat)
 
-MAX_IMAGE_BYTES = 5 * 1024 * 1024
+MAX_IMAGE_BYTES = min(5, MAX_UPLOAD_MB) * 1024 * 1024
 DOCTOR_KEEP = 20
 
 
@@ -1806,7 +1937,7 @@ def read_image(upload: Optional[UploadFile]):
     data = upload.file.read(MAX_IMAGE_BYTES + 1)
     kind = image_type(data)
     if len(data) > MAX_IMAGE_BYTES or not kind:
-        fail(400, "bad_image")
+        fail(400, "bad_image", MAX_IMAGE_BYTES // (1024 * 1024))
     return kind, data
 
 
@@ -2497,12 +2628,17 @@ def notify(user_keys: list, kind: str, view: str):
     """Trimite o notificare fiecărui utilizator, în limba lui, pe toate dispozitivele abonate."""
     if not webpush.enabled():
         return
+    pending = []
     for key in set(user_keys):
         lang = db["prefs"].get(key, {}).get("lang") or "ro"
         text = MESSAGES[kind][ai.LANGS.index(lang) if lang in ai.LANGS else 0]
         message = {"title": "Cutia Clasei", "body": text, "url": f"/static/index.html#{view}", "tag": kind}
         for sub in list(db.get("push", {}).get(key, [])):
-            _push_pool.submit(_deliver, key, sub, message)
+            pending.append(_push_pool.submit(_deliver, key, sub, message))
+    if SERVERLESS and pending:
+        # Pe Vercel funcția se oprește după răspuns: așteptăm trimiterea (cel mult câteva secunde)
+        from concurrent.futures import wait
+        wait(pending, timeout=8)
 
 
 if __name__ == "__main__":

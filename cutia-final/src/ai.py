@@ -15,7 +15,7 @@ import json
 import os
 import re
 
-MODEL = os.environ.get("CUTIA_MODEL", "claude-opus-5-5")
+MODEL = os.environ.get("CUTIA_MODEL", "claude-sonnet-5-5")
 
 LANGS = ("ro", "en", "fr", "it", "es", "de")
 LANGUAGE_NAME = {"ro": "Romanian", "en": "English", "fr": "French", "it": "Italian", "es": "Spanish", "de": "German"}

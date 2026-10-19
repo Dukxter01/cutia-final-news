@@ -1,4 +1,4 @@
-# Publicare pe Render (render.com → New → Blueprint → alegi acest repo).
+# Alternativă la Vercel: publicare pe Render (render.com → New → Blueprint → alegi acest repo).
 # Datele (întrebări, teme, idei) și fișierele stau în Supabase, deci planul gratuit
 # ajunge: serverul poate fi repornit oricând fără să se piardă nimic.
 # Cheile NU se scriu aici: le completezi în Render, la „Environment”
@@ -24,11 +24,7 @@ services:
         sync: false
       - key: TRAINER_CODE
         sync: false
-      - key: CLASS_CODE
-        sync: false
       - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_ANON_KEY
         sync: false
       - key: SUPABASE_SECRET_KEY   # doar pe server: pentru datele și fișierele aplicației
         sync: false

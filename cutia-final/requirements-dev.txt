@@ -1,0 +1,4 @@
+# Doar pe calculatorul tău: teste și `uvicorn --reload`
+-r requirements.txt
+pytest==9.1.1
+watchfiles

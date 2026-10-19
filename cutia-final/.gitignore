@@ -1,0 +1,13 @@
+# Chei și date: nu ajung niciodată pe GitHub
+.env
+.env.*
+!.env.example
+data/
+.vercel/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
