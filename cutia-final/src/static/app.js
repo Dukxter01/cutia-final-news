@@ -2595,7 +2595,7 @@ async function loadLive() {
 function scheduleLive() {
   clearTimeout(livePollTimer);
   livePollTimer = setTimeout(async () => {
-    await loadLive();
+    if (!isEditing()) await loadLive();
     if (auth) scheduleLive();
   }, currentView === "live" ? 3000 : 20000);
 }
@@ -2616,9 +2616,6 @@ function renderLive() {
   if (nav) nav.classList.toggle("on-air", on);
   $("#live-lead").textContent = t(on ? "live.leadOn" : "live.leadOff");
   if (!live) return;
-  // Nu redesenăm cât timp cineva scrie în ecranul live (altfel pierde textul)
-  const active = document.activeElement;
-  if (active && $("#live-body").contains(active) && /INPUT|TEXTAREA/.test(active.tagName) && active.value) return;
   $("#live-body").replaceChildren(on ? liveRoom() : liveOff());
 }
 
@@ -3366,15 +3363,27 @@ async function refresh() {
   } catch (err) { toast(err.message); }
 }
 
+// Cineva scrie ceva? Atunci nu redesenăm nimic din fundal (altfel pierde textul și cursorul).
+// Câmpurile fixe din index.html nu sunt șterse la redesenare, deci contează doar cele din zonele de mai jos.
+const REBUILT = "#announce-box, #live-body, #byte, #questions-list, #submissions-list, #proposals-list, #my-proposals-list";
+const TEXT_FIELD = "textarea, select, input:not([type=checkbox]):not([type=radio]):not([type=button]):not([type=submit]):not([type=range]):not([type=file])";
+function isEditing() {
+  const a = document.activeElement;
+  if (a && a.id !== "chat-input" && (a.isContentEditable || a.matches(TEXT_FIELD))) return true;
+  return [...document.querySelectorAll(REBUILT)].some((box) =>
+    [...box.querySelectorAll("input, textarea")].some((f) => f.matches(TEXT_FIELD) && f.value !== f.defaultValue));
+}
+
 // Reîmprospătare periodică: mesajele des, restul la 20 de secunde
 setInterval(() => {
   if (!isLoggedIn() || document.hidden) return;
+  if (isEditing()) { if (currentView === "messages") loadChat(); return; }
   loadUnread().then(() => { renderBell(); if (currentView === "home") renderHome(); });
   if (currentView === "messages") loadChat();
 }, 6000);
 
 setInterval(() => {
-  if (!isLoggedIn() || document.hidden) return;
+  if (!isLoggedIn() || document.hidden || isEditing()) return;
   // Nu redesenăm cât timp cineva scrie un răspuns, un feedback sau așteaptă AI-ul
   if (!document.querySelector(".answer-form:not(.hidden)") && aiPending.size === 0) loadQuestions().catch(() => {});
   if (!document.querySelector(".review-form:not(.hidden)")) loadSubmissions().catch(() => {});
