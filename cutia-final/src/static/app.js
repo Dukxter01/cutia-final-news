@@ -112,6 +112,16 @@ async function api(path, options = {}) {
   return data;
 }
 
+// Înlocuiește conținutul doar dacă s-a schimbat ceva. Altfel reîmprospătarea din fundal
+// ar redesena pagina (și ar reporni animațiile) la fiecare câteva secunde.
+function swap(box, ...children) {
+  const tmp = document.createElement(box.tagName);
+  tmp.append(...children.flat().filter((c) => c != null && c !== false));
+  if (tmp.innerHTML === box.innerHTML) return false;
+  box.replaceChildren(...tmp.childNodes);
+  return true;
+}
+
 function el(tag, attrs = {}, ...children) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -718,7 +728,7 @@ function renderStats(instant = false) {
         ["subs", submissions.length, "nav.submissions"],
         ["proposals", proposals.length, "stat.proposals"],
       ];
-  $("#stats").replaceChildren(...stats.map(([key, value, label, hl]) => {
+  swap($("#stats"), ...stats.map(([key, value, label, hl]) => {
     const from = instant ? value : lastStats[key] ?? 0;
     const b = el("b", {}, String(from));
     countUp(b, from, value);
@@ -751,7 +761,7 @@ function renderLevelCard() {
   card.classList.toggle("hidden", isTrainer() || !myPoints);
   if (isTrainer() || !myPoints) return;
   const prog = levelProgress(myPoints);
-  card.replaceChildren(
+  swap(card, 
     el("div", { class: "level-badge" }, String(myPoints.level.index)),
     el("div", {},
       el("b", {}, `${t("pt.level", myPoints.level.index)} · ${t("lvl." + myPoints.level.key)}`),
@@ -789,7 +799,7 @@ function renderAnnouncements() {
     });
     children.push(form);
   }
-  box.replaceChildren(...children, ...rows);
+  swap(box, ...children, ...rows);
 }
 
 function actionCard(view, h, top, title, desc, after) {
@@ -827,7 +837,7 @@ function renderHome(instant = false) {
         actionCard("guide", 150, ico("#"), t("act.learn"), t("act.learnD")),
       ];
   cards.forEach((c, i) => (c.style.animationDelay = `${i * 50}ms`));
-  $("#actions").replaceChildren(...cards);
+  swap($("#actions"), ...cards);
 
   // Teme cu termen
   const upcoming = assignments
@@ -835,7 +845,7 @@ function renderHome(instant = false) {
     .sort((a, b) => (a.due_at < b.due_at ? -1 : 1))
     .filter((a) => isTrainer() || !a.submitted || new Date(a.due_at) > new Date())
     .slice(0, 4);
-  $("#home-deadlines").replaceChildren(...(upcoming.length ? upcoming.map((a) => {
+  swap($("#home-deadlines"), ...(upcoming.length ? upcoming.map((a) => {
     const cd = countdown(a.due_at);
     const badge = !isTrainer() && a.submitted
       ? el("span", { class: "countdown done" }, t("a.done"))
@@ -848,7 +858,7 @@ function renderHome(instant = false) {
   const insight = $("#home-insight");
   const brief = digestData && digestData.digest;
   if (brief && (brief.tldr || brief.stories.length)) {
-    insight.replaceChildren(el("div", { class: "insight" },
+    swap(insight, el("div", { class: "insight" },
       el("div", { class: "meta mono muted small" }, `🤖 Byte · ${t("byte.eyebrow")}`),
       el("h4", {}, brief.title || brief.stories[0].headline || brief.stories[0].title),
       el("p", {}, brief.tldr || brief.stories[0].why || trunc(brief.stories[0].summary || "", 200)),
@@ -858,13 +868,13 @@ function renderHome(instant = false) {
   if (brief && (brief.tldr || brief.stories.length)) {
     // briefing-ul lui Byte e deja afișat mai sus
   } else if (top) {
-    insight.replaceChildren(el("div", { class: "insight" },
+    swap(insight, el("div", { class: "insight" },
       el("div", { class: "meta mono muted small" }, `${top.source} · ${timeAgo(top.published)}`),
       el("h4", {}, top.headline || top.title),
       el("p", {}, top.why || top.summary),
       safeLink(top.link) ? el("a", { class: "link-btn", href: top.link, target: "_blank", rel: "noopener noreferrer" }, t("n.read")) : null));
   } else {
-    insight.replaceChildren(el("div", { class: "empty" }, newsLoading || !newsData ? el("span", {}, t("n.loading"), el("span", { class: "dots" })) : t("n.empty")));
+    swap(insight, el("div", { class: "empty" }, newsLoading || !newsData ? el("span", {}, t("n.loading"), el("span", { class: "dots" })) : t("n.empty")));
   }
 
   const recent = [
@@ -873,13 +883,13 @@ function renderHome(instant = false) {
     ...submissions.map((x) => ({ at: x.created_at, view: "submissions", k: t("kind." + x.kind).split(" ")[0], text: x.title,
       status: el("span", { class: `status ${x.status}` }, t("st." + x.status)) })),
   ].sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 5);
-  $("#home-recent").replaceChildren(...(recent.length ? recent.map((it) =>
+  swap($("#home-recent"), ...(recent.length ? recent.map((it) =>
     el("button", { class: "mini", onclick: () => showView(it.view) },
       el("span", { class: "k" }, it.k), el("span", { class: "t" }, it.text), it.status))
     : [el("div", { class: "empty" }, t("home.nothing"))]));
 
   const best = proposals.filter((p) => p.status !== "withdrawn").sort((a, b) => b.votes - a.votes || b.id - a.id).slice(0, 5);
-  $("#home-top").replaceChildren(...(best.length ? best.map((p) =>
+  swap($("#home-top"), ...(best.length ? best.map((p) =>
     el("button", { class: "mini", onclick: () => showView("box") },
       el("span", { class: "k" }, p.chosen ? "★" : "✦"), el("span", { class: "t" }, p.title),
       el("span", { class: "votes" }, `▲ ${p.votes}`)))
@@ -2537,7 +2547,7 @@ function renderRecap() {
       el("button", { type: "button", class: "small", onclick: () => box.replaceWith(faqEditor({ q: s.q, a: s.a, question_id: s.question_id }, () => loadRecap())) }, t("rec.toFaq")));
     return box;
   };
-  card.replaceChildren(
+  swap(card,
     el("div", { class: "panel-head" }, el("h3", {}, t("rec.title")),
       el("button", { type: "button", class: "link-btn", onclick: () => loadRecap(true) }, t(cfg.ai ? "rec.refreshAi" : "rec.refresh"))),
     el("div", { class: "recap-stats" },
